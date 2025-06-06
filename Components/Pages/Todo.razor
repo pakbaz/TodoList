@@ -1,7 +1,6 @@
 ﻿@page "/"
 @rendermode InteractiveServer
 @inject TodoListService TodoService
-@implements IDisposable
 
 <PageTitle>Todo</PageTitle>
 
@@ -17,7 +16,7 @@
         }
     </div>
     <div class="todo-add">
-        <input class="todo-new-input" placeholder="Something todo" @bind="newTodo" />
+        <input class="todo-new-input" placeholder="Something todo" @bind="newTodo" @onkeypress="OnKeyPress" />
         <button class="todo-add-btn" @onclick="AddTodo">Add</button>
     </div>
 </div>
@@ -25,13 +24,6 @@
 @code {
     private IReadOnlyList<TodoItem> todos => TodoService.GetAll();
     private string? newTodo;
-    private System.Threading.Timer? _timer;
-
-    protected override void OnInitialized()
-    {
-        // Refresh UI every 2 seconds
-        _timer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, 2000, 2000);
-    }
 
     private void AddTodo()
     {
@@ -42,8 +34,11 @@
         }
     }
 
-    public void Dispose()
+    private void OnKeyPress(KeyboardEventArgs e)
     {
-        _timer?.Dispose();
+        if (e.Key == "Enter")
+        {
+            AddTodo();
+        }
     }
 }
