@@ -1,4 +1,4 @@
-# TodoList MCP Server - Docker Guide
+# TodoList with MCP Server Docker Hosted
 
 This is a .NET 9.0 TodoList application that provides both a web interface and an MCP (Model Context Protocol) server for AI assistants.
 
