@@ -1,17 +1,17 @@
 ﻿@page "/"
 @rendermode InteractiveServer
 @inject TodoListService TodoService
+@using Microsoft.AspNetCore.Components.Web
+@implements IDisposable
 
 <PageTitle>Todo</PageTitle>
 
 <div class="todo-container">
-    <h1 class="todo-title">Todo List <span class="todo-count">(@todos.Count(todo => !todo.IsDone))</span></h1>
-    <div class="todo-list">
-        @foreach (var todo in todos)
+    <h1 class="todo-title">Todo List <span class="todo-count">(@todos.Count(todo => !todo.IsDone))</span></h1>    <div class="todo-list">        @foreach (var todo in todos)
         {
             <div class="todo-item @(todo.IsDone ? "done" : "")">
-                <input type="checkbox" class="todo-checkbox" @bind="todo.IsDone" />
-                <input class="todo-input" @bind="todo.Title" />
+                <input type="checkbox" class="todo-checkbox" @bind="todo.IsDone" @bind:after="OnTodoChanged" />
+                <input class="todo-input" @bind="todo.Title" @bind:after="OnTodoChanged" />
             </div>
         }
     </div>
@@ -24,6 +24,24 @@
 @code {
     private IReadOnlyList<TodoItem> todos => TodoService.GetAll();
     private string? newTodo;
+    private Timer? refreshTimer;
+
+    protected override void OnInitialized()
+    {
+        // Set up a timer to refresh the todo list every 2 seconds
+        refreshTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(() =>
+            {
+                StateHasChanged(); // Force UI refresh to get latest todos
+            });
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
 
     private void AddTodo()
     {
@@ -31,6 +49,7 @@
         {
             TodoService.Add(new TodoItem { Title = newTodo });
             newTodo = string.Empty;
+            StateHasChanged(); // Immediate refresh after adding
         }
     }
 
@@ -40,5 +59,8 @@
         {
             AddTodo();
         }
+    }    private void OnTodoChanged()
+    {
+        StateHasChanged(); // Immediate refresh when any todo changes
     }
 }
