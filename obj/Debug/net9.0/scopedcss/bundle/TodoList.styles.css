@@ -1,0 +1,198 @@
+/* _content/TodoList/Components/Layout/MainLayout.razor.rz.scp.css */
+.page[b-uhsx9dfayp] {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+main[b-uhsx9dfayp] {
+    flex: 1;
+}
+
+.sidebar[b-uhsx9dfayp] {
+    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+}
+
+.top-row[b-uhsx9dfayp] {
+    background-color: #f7f7f7;
+    border-bottom: 1px solid #d6d5d5;
+    justify-content: flex-end;
+    height: 3.5rem;
+    display: flex;
+    align-items: center;
+}
+
+    .top-row[b-uhsx9dfayp]  a, .top-row[b-uhsx9dfayp]  .btn-link {
+        white-space: nowrap;
+        margin-left: 1.5rem;
+        text-decoration: none;
+    }
+
+    .top-row[b-uhsx9dfayp]  a:hover, .top-row[b-uhsx9dfayp]  .btn-link:hover {
+        text-decoration: underline;
+    }
+
+    .top-row[b-uhsx9dfayp]  a:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+@media (max-width: 640.98px) {
+    .top-row[b-uhsx9dfayp] {
+        justify-content: space-between;
+    }
+
+    .top-row[b-uhsx9dfayp]  a, .top-row[b-uhsx9dfayp]  .btn-link {
+        margin-left: 0;
+    }
+}
+
+@media (min-width: 641px) {
+    .page[b-uhsx9dfayp] {
+        flex-direction: row;
+    }
+
+    .sidebar[b-uhsx9dfayp] {
+        width: 250px;
+        height: 100vh;
+        position: sticky;
+        top: 0;
+    }
+
+    .top-row[b-uhsx9dfayp] {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .top-row.auth[b-uhsx9dfayp]  a:first-child {
+        flex: 1;
+        text-align: right;
+        width: 0;
+    }
+
+    .top-row[b-uhsx9dfayp], article[b-uhsx9dfayp] {
+        padding-left: 2rem !important;
+        padding-right: 1.5rem !important;
+    }
+}
+
+#blazor-error-ui[b-uhsx9dfayp] {
+    color-scheme: light only;
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+    #blazor-error-ui .dismiss[b-uhsx9dfayp] {
+        cursor: pointer;
+        position: absolute;
+        right: 0.75rem;
+        top: 0.5rem;
+    }
+
+    
+/* _content/TodoList/Components/Pages/Todo.razor.rz.scp.css */
+.todo-container[b-umqmnnh8s8] {
+    max-width: 400px;
+    margin: 40px auto;
+    background: #f9f9fb;
+    border-radius: 24px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    padding: 32px 24px 24px 24px;
+    font-family: 'San Francisco', 'Segoe UI', Arial, sans-serif;
+}
+.todo-title[b-umqmnnh8s8] {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: #222;
+    letter-spacing: -1px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.todo-count[b-umqmnnh8s8] {
+    font-size: 1rem;
+    color: #888;
+    margin-left: 8px;
+}
+.todo-list[b-umqmnnh8s8] {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+.todo-item[b-umqmnnh8s8] {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    padding: 12px 16px;
+    transition: box-shadow 0.2s;
+}
+.todo-item.done[b-umqmnnh8s8] {
+    opacity: 0.6;
+    text-decoration: line-through;
+}
+.todo-checkbox[b-umqmnnh8s8] {
+    width: 22px;
+    height: 22px;
+    accent-color: #007aff;
+    margin-right: 16px;
+    cursor: pointer;
+}
+.todo-input[b-umqmnnh8s8] {
+    border: none;
+    background: transparent;
+    font-size: 1.1rem;
+    flex: 1;
+    outline: none;
+    color: #222;
+    padding: 4px 0;
+}
+.todo-input:focus[b-umqmnnh8s8] {
+    background: #f0f4ff;
+    border-radius: 6px;
+}
+.todo-add[b-umqmnnh8s8] {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+.todo-new-input[b-umqmnnh8s8] {
+    flex: 1;
+    border: none;
+    border-radius: 12px;
+    background: #f0f0f5;
+    padding: 12px 16px;
+    font-size: 1rem;
+    outline: none;
+    transition: background 0.2s;
+}
+.todo-new-input:focus[b-umqmnnh8s8] {
+    background: #e6eaff;
+}
+.todo-add-btn[b-umqmnnh8s8] {
+    background: #007aff;
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,122,255,0.08);
+    transition: background 0.2s;
+}
+.todo-add-btn:hover[b-umqmnnh8s8], .todo-add-btn:focus[b-umqmnnh8s8] {
+    background: #005ecb;
+}

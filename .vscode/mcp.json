@@ -1,0 +1,7 @@
+{
+    "servers": {
+        "my-mcp-server-635d5e26": {
+            "url": "http://localhost:5051/mcp"
+        }
+    }
+}

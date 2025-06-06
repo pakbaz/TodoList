@@ -1,0 +1,49 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@inject TodoListService TodoService
+@implements IDisposable
+
+<PageTitle>Todo</PageTitle>
+
+<div class="todo-container">
+    <h1 class="todo-title">Todo List <span class="todo-count">(@todos.Count(todo => !todo.IsDone))</span></h1>
+    <div class="todo-list">
+        @foreach (var todo in todos)
+        {
+            <div class="todo-item @(todo.IsDone ? "done" : "")">
+                <input type="checkbox" class="todo-checkbox" @bind="todo.IsDone" />
+                <input class="todo-input" @bind="todo.Title" />
+            </div>
+        }
+    </div>
+    <div class="todo-add">
+        <input class="todo-new-input" placeholder="Something todo" @bind="newTodo" />
+        <button class="todo-add-btn" @onclick="AddTodo">Add</button>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<TodoItem> todos => TodoService.GetAll();
+    private string? newTodo;
+    private System.Threading.Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        // Refresh UI every 2 seconds
+        _timer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, 2000, 2000);
+    }
+
+    private void AddTodo()
+    {
+        if (!string.IsNullOrWhiteSpace(newTodo))
+        {
+            TodoService.Add(new TodoItem { Title = newTodo });
+            newTodo = string.Empty;
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}
