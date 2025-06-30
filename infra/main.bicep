@@ -28,6 +28,7 @@ var tags = {
   Environment: environmentName
   Application: 'TodoList'
   ManagedBy: 'GitHubActions'
+  'azd-env-name': environmentName
 }
 
 // PostgreSQL configuration
@@ -295,7 +296,9 @@ resource appInsightsConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@20
 resource todolistApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: '${prefix}-app'
   location: location
-  tags: tags
+  tags: union(tags, {
+    'azd-service-name': 'todolist-app'
+  })
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
