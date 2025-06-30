@@ -1,193 +1,170 @@
+using Microsoft.EntityFrameworkCore;
 using TodoList.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
-
-builder.Services.AddSingleton<TodoListService>();
+// Configure services
+ConfigureServices(builder);
 
 var app = builder.Build();
 
-if (!app.Environment.IsDevelopment())
+// Configure middleware and database
+await ConfigureAppAsync(app);
+
+app.Run();
+
+void ConfigureServices(WebApplicationBuilder builder)
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    app.UseHsts();
+    // Database configuration - PostgreSQL with SQLite fallback
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    if (!string.IsNullOrEmpty(connectionString) && connectionString.Contains("Host="))
+    {
+        builder.Services.AddDbContext<TodoDbContext>(options =>
+            options.UseNpgsql(connectionString));
+    }
+    else
+    {
+        var sqliteConnection = builder.Configuration.GetConnectionString("SqliteConnection") ?? "Data Source=todolist.db";
+        builder.Services.AddDbContext<TodoDbContext>(options =>
+            options.UseSqlite(sqliteConnection));
+    }
+
+    // Blazor services
+    builder.Services.AddRazorComponents()
+        .AddInteractiveServerComponents();
+
+    // Application services
+    builder.Services.AddScoped<TodoListService>();
 }
 
-app.UseAntiforgery();
+async Task ConfigureAppAsync(WebApplication app)
+{
+    // Initialize database
+    await InitializeDatabaseAsync(app);
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
-
-app.MapStaticAssets();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
-
-var todoService = app.Services.GetRequiredService<TodoListService>();
-
-var mcpBuilder = WebApplication.CreateBuilder();
-mcpBuilder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(5051));
-mcpBuilder.Services.AddSingleton(todoService);
-var mcpApp = mcpBuilder.Build();
-
-mcpApp.MapPost("/mcp/add", (TodoItem item) => {
-    todoService.Add(item);
-    return Results.Ok(todoService.GetAll());
-});
-
-mcpApp.MapPost("/mcp/remove", (TodoItem item) => {
-    todoService.Remove(item.Title);
-    return Results.Ok(todoService.GetAll());
-});
-
-mcpApp.MapPost("/mcp/markdone", (TodoItem item) => {
-    todoService.MarkAsDone(item.Title, item.IsDone);
-    return Results.Ok(todoService.GetAll());
-});
-
-mcpApp.MapGet("/mcp/todos", () => {
-    var todos = todoService.GetAll();
-    return Results.Ok(new { 
-        success = true, 
-        todos = todos.Select(t => new { title = t.Title, isDone = t.IsDone }).ToArray(),
-        count = todos.Count
-    });
-});
-
-mcpApp.MapGet("/mcp/", async (HttpContext context) => {
-    context.Response.Headers["Content-Type"] = "text/event-stream";
-    await context.Response.Body.FlushAsync();
-    while (!context.RequestAborted.IsCancellationRequested)
+    // Configure middleware
+    if (!app.Environment.IsDevelopment())
     {
-        await context.Response.WriteAsync(": keep-alive\n\n");
-        await context.Response.Body.FlushAsync();
-        await Task.Delay(10000, context.RequestAborted);
+        app.UseExceptionHandler("/Error", createScopeForErrors: true);
+        app.UseHsts();
     }
-});
 
-mcpApp.MapPost("/mcp", async (HttpContext context) => {
-    try {
+    app.UseAntiforgery();
+
+    // Configure routes
+    ConfigureRoutes(app);
+}
+
+void ConfigureRoutes(WebApplication app)
+{
+    // Health check
+    app.MapGet("/health", () => Results.Ok(new { 
+        status = "healthy", 
+        timestamp = DateTime.UtcNow,
+        environment = app.Environment.EnvironmentName 
+    }));
+
+    // Static assets and Blazor components
+    app.MapStaticAssets();
+    app.MapRazorComponents<App>()
+        .AddInteractiveServerRenderMode();
+
+    // MCP API endpoints
+    ConfigureMcpRoutes(app);
+}
+
+void ConfigureMcpRoutes(WebApplication app)
+{
+    // Simple REST endpoints for todo operations
+    app.MapGet("/mcp/todos", async (TodoListService service) => 
+        Results.Ok(new { 
+            success = true, 
+            todos = (await service.GetAllAsync()).Select(t => new { t.Title, t.IsDone }),
+            count = await service.GetCountAsync()
+        }));
+
+    app.MapPost("/mcp/todos", async (AddTodoRequest request, TodoListService service) => 
+    {
+        await service.AddAsync(new TodoItem { Title = request.Title, IsDone = request.IsDone });
+        return Results.Ok(new { success = true, message = $"Added todo: {request.Title}" });
+    });
+
+    app.MapDelete("/mcp/todos/{title}", async (string title, TodoListService service) => 
+    {
+        await service.RemoveAsync(title);
+        return Results.Ok(new { success = true, message = $"Removed todo: {title}" });
+    });
+
+    app.MapPut("/mcp/todos/{title}", async (string title, UpdateTodoRequest request, TodoListService service) => 
+    {
+        await service.MarkAsDoneAsync(title, request.IsDone);
+        return Results.Ok(new { success = true, message = $"Updated todo: {title}" });
+    });
+
+    // MCP protocol endpoint for tool integration
+    app.MapPost("/mcp", HandleMcpProtocol);
+}
+
+async Task InitializeDatabaseAsync(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
+    try
+    {
+        await context.Database.EnsureCreatedAsync();
+        logger.LogInformation("Database initialized successfully");
+        
+        // Seed sample data if empty
+        if (!await context.TodoItems.AnyAsync())
+        {
+            var sampleTodos = new[]
+            {
+                new TodoItem { Title = "Learn Entity Framework Core", IsDone = false },
+                new TodoItem { Title = "Setup PostgreSQL Database", IsDone = true },
+                new TodoItem { Title = "Create Todo App", IsDone = false }
+            };
+            
+            context.TodoItems.AddRange(sampleTodos);
+            await context.SaveChangesAsync();
+            logger.LogInformation("Sample data seeded successfully");
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Database initialization failed");
+        throw; // Re-throw to prevent app from starting with broken database
+    }
+}
+
+async Task<IResult> HandleMcpProtocol(HttpContext context, TodoListService service)
+{
+    try 
+    {
         using var reader = new StreamReader(context.Request.Body);
         var requestBody = await reader.ReadToEndAsync();
         var jsonRequest = System.Text.Json.JsonDocument.Parse(requestBody);
         
-        if (jsonRequest.RootElement.TryGetProperty("method", out var method) && 
-            jsonRequest.RootElement.TryGetProperty("id", out var id))
+        if (!jsonRequest.RootElement.TryGetProperty("method", out var method) || 
+            !jsonRequest.RootElement.TryGetProperty("id", out var id))
         {
-            var methodName = method.GetString();
-            var responseId = id.GetInt32();
-            
-            object result = methodName switch
-            {
-                "initialize" => new {
-                    serverInfo = new { name = "TodoList MCP Server", version = "1.0.0" },
-                    capabilities = new { tools = new { listChanged = false } }
-                },
-                "tools/list" => new {
-                    tools = new object[] {
-                        new {
-                            name = "add_todo",
-                            description = "Add a new todo item",
-                            inputSchema = new {
-                                type = "object",
-                                properties = new {
-                                    title = new { type = "string", description = "The title of the todo item" },
-                                    isDone = new { type = "boolean", description = "Whether the todo is completed", @default = false }
-                                },
-                                required = new[] { "title" }
-                            }
-                        },
-                        new {
-                            name = "remove_todo",
-                            description = "Remove a todo item by title",
-                            inputSchema = new {
-                                type = "object",
-                                properties = new { title = new { type = "string", description = "The title of the todo item to remove" } },
-                                required = new[] { "title" }
-                            }
-                        },
-                        new {
-                            name = "mark_todo_done",
-                            description = "Mark a todo item as done or undone",
-                            inputSchema = new {
-                                type = "object",
-                                properties = new {
-                                    title = new { type = "string", description = "The title of the todo item" },
-                                    isDone = new { type = "boolean", description = "Whether the todo should be marked as done" }
-                                },
-                                required = new[] { "title", "isDone" }
-                            }
-                        },
-                        new {
-                            name = "get_todos",
-                            description = "Get the current list of all todo items",
-                            inputSchema = new { type = "object", properties = new { }, required = new string[] { } }
-                        }
-                    }
-                },
-                "tools/call" => HandleToolCall(),
-                _ => new {}
-            };
-
-            object HandleToolCall()
-            {
-                var paramsElement = jsonRequest.RootElement.GetProperty("params");
-                var toolName = paramsElement.GetProperty("name").GetString()!;
-                var arguments = paramsElement.GetProperty("arguments");
-                
-                object toolResult = toolName switch
-                {
-                    "add_todo" => HandleAddTodo(),
-                    "remove_todo" => HandleRemoveTodo(),
-                    "mark_todo_done" => HandleMarkTodo(),
-                    "get_todos" => HandleGetTodos(),
-                    _ => new { success = false, message = $"Unknown tool: {toolName}" }
-                };
-
-                object HandleAddTodo()
-                {
-                    var title = arguments.GetProperty("title").GetString()!;
-                    var isDone = arguments.TryGetProperty("isDone", out var isDoneProperty) ? isDoneProperty.GetBoolean() : false;
-                    todoService.Add(new TodoItem { Title = title, IsDone = isDone });
-                    return new { success = true, message = $"Added todo: {title}" };
-                }
-
-                object HandleRemoveTodo()
-                {
-                    var removeTitle = arguments.GetProperty("title").GetString()!;
-                    todoService.Remove(removeTitle);
-                    return new { success = true, message = $"Removed todo: {removeTitle}" };
-                }
-
-                object HandleMarkTodo()
-                {
-                    var markTitle = arguments.GetProperty("title").GetString()!;
-                    var markDone = arguments.GetProperty("isDone").GetBoolean();
-                    todoService.MarkAsDone(markTitle, markDone);
-                    return new { success = true, message = $"Marked todo '{markTitle}' as {(markDone ? "done" : "not done")}" };
-                }
-
-                object HandleGetTodos()
-                {
-                    var allTodos = todoService.GetAll();
-                    return new { 
-                        success = true, 
-                        todos = allTodos.Select(t => new { title = t.Title, isDone = t.IsDone }).ToArray(),
-                        count = allTodos.Count
-                    };
-                }
-
-                return new {
-                    content = new[] {
-                        new { type = "text", text = System.Text.Json.JsonSerializer.Serialize(toolResult) }
-                    }
-                };
-            }
-            
-            var response = new { jsonrpc = "2.0", id = responseId, result };
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(response);
+            return Results.BadRequest(new { error = "Invalid MCP request format" });
         }
+
+        var methodName = method.GetString();
+        var responseId = id.GetInt32();
+        
+        object result = methodName switch
+        {
+            "initialize" => CreateInitializeResponse(),
+            "tools/list" => CreateToolsListResponse(),
+            "tools/call" => await HandleToolCallAsync(jsonRequest, service),
+            _ => new { error = $"Unknown method: {methodName}" }
+        };
+        
+        var response = new { jsonrpc = "2.0", id = responseId, result };
+        return Results.Ok(response);
     }
     catch (Exception ex)
     {
@@ -197,23 +174,113 @@ mcpApp.MapPost("/mcp", async (HttpContext context) => {
             error = new { code = -32700, message = "Parse error", data = ex.Message }
         };
         
-        context.Response.ContentType = "application/json";
-        context.Response.StatusCode = 200;
-        await context.Response.WriteAsJsonAsync(errorResponse);
+        return Results.BadRequest(errorResponse);
     }
-});
+}
 
-mcpApp.MapGet("/mcp/tools", async (HttpContext context) => {
-    context.Response.ContentType = "application/json";    
-    var tools = new object[] {
-        new { name = "add", description = "Add a todo item", parameters = new[] { new { name = "title", type = "string", required = true }, new { name = "isDone", type = "boolean", required = false } } },
-        new { name = "remove", description = "Remove a todo item by title", parameters = new[] { new { name = "title", type = "string", required = true } } },
-        new { name = "markdone", description = "Mark a todo item as done or undone", parameters = new[] { new { name = "title", type = "string", required = true }, new { name = "isDone", type = "boolean", required = true } } },
-        new { name = "get_todos", description = "Get the current list of all todo items", parameters = Array.Empty<object>() }
+object CreateInitializeResponse() => new {
+    serverInfo = new { name = "TodoList MCP Server", version = "2.0.0" },
+    capabilities = new { tools = new { listChanged = false } }
+};
+
+object CreateToolsListResponse() => new {
+    tools = new object[] {
+        new {
+            name = "add_todo",
+            description = "Add a new todo item",
+            inputSchema = new {
+                type = "object",
+                properties = new {
+                    title = new { type = "string", description = "The title of the todo item" },
+                    isDone = new { type = "boolean", description = "Whether the todo is completed", @default = false }
+                },
+                required = new[] { "title" }
+            }
+        },
+        new {
+            name = "remove_todo",
+            description = "Remove a todo item by title",
+            inputSchema = new {
+                type = "object",
+                properties = new { title = new { type = "string", description = "The title of the todo item to remove" } },
+                required = new[] { "title" }
+            }
+        },
+        new {
+            name = "mark_todo_done",
+            description = "Mark a todo item as done or undone",
+            inputSchema = new {
+                type = "object",
+                properties = new {
+                    title = new { type = "string", description = "The title of the todo item" },
+                    isDone = new { type = "boolean", description = "Whether the todo should be marked as done" }
+                },
+                required = new[] { "title", "isDone" }
+            }
+        },
+        new {
+            name = "get_todos",
+            description = "Get the current list of all todo items",
+            inputSchema = new { type = "object", properties = new { }, required = new string[] { } }
+        }
+    }
+};
+
+async Task<object> HandleToolCallAsync(System.Text.Json.JsonDocument jsonRequest, TodoListService service)
+{
+    var paramsElement = jsonRequest.RootElement.GetProperty("params");
+    var toolName = paramsElement.GetProperty("name").GetString()!;
+    var arguments = paramsElement.GetProperty("arguments");
+    
+    object toolResult = toolName switch
+    {
+        "add_todo" => await HandleAddTodoAsync(arguments, service),
+        "remove_todo" => await HandleRemoveTodoAsync(arguments, service),
+        "mark_todo_done" => await HandleMarkTodoAsync(arguments, service),
+        "get_todos" => await HandleGetTodosAsync(service),
+        _ => new { success = false, message = $"Unknown tool: {toolName}" }
     };
-    await context.Response.WriteAsJsonAsync(tools, context.RequestAborted);
-});
 
-_ = Task.Run(async () => await mcpApp.RunAsync());
+    return new {
+        content = new[] {
+            new { type = "text", text = System.Text.Json.JsonSerializer.Serialize(toolResult) }
+        }
+    };
+}
 
-app.Run();
+async Task<object> HandleAddTodoAsync(System.Text.Json.JsonElement arguments, TodoListService service)
+{
+    var title = arguments.GetProperty("title").GetString()!;
+    var isDone = arguments.TryGetProperty("isDone", out var isDoneProperty) ? isDoneProperty.GetBoolean() : false;
+    await service.AddAsync(new TodoItem { Title = title, IsDone = isDone });
+    return new { success = true, message = $"Added todo: {title}" };
+}
+
+async Task<object> HandleRemoveTodoAsync(System.Text.Json.JsonElement arguments, TodoListService service)
+{
+    var title = arguments.GetProperty("title").GetString()!;
+    await service.RemoveAsync(title);
+    return new { success = true, message = $"Removed todo: {title}" };
+}
+
+async Task<object> HandleMarkTodoAsync(System.Text.Json.JsonElement arguments, TodoListService service)
+{
+    var title = arguments.GetProperty("title").GetString()!;
+    var isDone = arguments.GetProperty("isDone").GetBoolean();
+    await service.MarkAsDoneAsync(title, isDone);
+    return new { success = true, message = $"Marked todo '{title}' as {(isDone ? "done" : "not done")}" };
+}
+
+async Task<object> HandleGetTodosAsync(TodoListService service)
+{
+    var todos = await service.GetAllAsync();
+    return new { 
+        success = true, 
+        todos = todos.Select(t => new { t.Title, t.IsDone }),
+        count = todos.Count
+    };
+}
+
+// Request DTOs for clean API contracts
+public record AddTodoRequest(string Title, bool IsDone = false);
+public record UpdateTodoRequest(bool IsDone);

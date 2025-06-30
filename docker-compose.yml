@@ -1,20 +1,53 @@
 version: '3.8'
 
 services:
+  postgresql:
+    image: postgres:15
+    container_name: todolist-postgres
+    environment:
+      POSTGRES_DB: todolistdb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database-setup.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d todolistdb"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - todolist-network
+
   todolist:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: todolist-app
     ports:
-      - "8080:8080"   # Web UI
-      - "5051:5051"   # MCP Server
+      - "8080:8080"   # Web UI and MCP Server on same port
+    depends_on:
+      postgresql:
+        condition: service_healthy
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgresql;Database=todolistdb;Username=admin;Password=password
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 60s
+    networks:
+      - todolist-network
+
+volumes:
+  postgres_data:
+
+networks:
+  todolist-network:
+    driver: bridge

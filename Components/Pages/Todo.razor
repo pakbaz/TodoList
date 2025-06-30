@@ -7,7 +7,10 @@
 <PageTitle>Todo</PageTitle>
 
 <div class="todo-container">
-    <h1 class="todo-title">Todo List <span class="todo-count">(@todos.Count(todo => !todo.IsDone))</span></h1>    <div class="todo-list">        @foreach (var todo in todos)
+    <h1 class="todo-title">Todo List <span class="todo-count">(@todos.Count(todo => !todo.IsDone))</span></h1>
+    
+    <div class="todo-list">
+        @foreach (var todo in todos)
         {
             <div class="todo-item @(todo.IsDone ? "done" : "")">
                 <input type="checkbox" class="todo-checkbox" @bind="todo.IsDone" @bind:after="OnTodoChanged" />
@@ -15,6 +18,7 @@
             </div>
         }
     </div>
+    
     <div class="todo-add">
         <input class="todo-new-input" placeholder="Something todo" @bind="newTodo" @onkeypress="OnKeyPress" />
         <button class="todo-add-btn" @onclick="AddTodo">Add</button>
@@ -22,45 +26,59 @@
 </div>
 
 @code {
-    private IReadOnlyList<TodoItem> todos => TodoService.GetAll();
+    private List<TodoItem> todos = new();
     private string? newTodo;
     private Timer? refreshTimer;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        // Set up a timer to refresh the todo list every 2 seconds
-        refreshTimer = new Timer(async _ =>
+        await LoadTodos();
+        
+        // Refresh every 5 seconds to keep UI in sync
+        refreshTimer = new Timer(async _ => 
         {
-            await InvokeAsync(() =>
+            await InvokeAsync(async () =>
             {
-                StateHasChanged(); // Force UI refresh to get latest todos
+                await LoadTodos();
+                StateHasChanged();
             });
-        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task LoadTodos()
+    {
+        var allTodos = await TodoService.GetAllAsync();
+        todos = allTodos.ToList();
+    }
+
+    private async Task OnTodoChanged()
+    {
+        await LoadTodos();
+        StateHasChanged();
+    }
+
+    private async Task OnKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AddTodo();
+        }
+    }
+
+    private async Task AddTodo()
+    {
+        if (!string.IsNullOrWhiteSpace(newTodo))
+        {
+            var todoItem = new TodoItem { Title = newTodo, IsDone = false };
+            await TodoService.AddAsync(todoItem);
+            newTodo = string.Empty;
+            await LoadTodos();
+            StateHasChanged();
+        }
     }
 
     public void Dispose()
     {
         refreshTimer?.Dispose();
-    }
-
-    private void AddTodo()
-    {
-        if (!string.IsNullOrWhiteSpace(newTodo))
-        {
-            TodoService.Add(new TodoItem { Title = newTodo });
-            newTodo = string.Empty;
-            StateHasChanged(); // Immediate refresh after adding
-        }
-    }
-
-    private void OnKeyPress(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter")
-        {
-            AddTodo();
-        }
-    }    private void OnTodoChanged()
-    {
-        StateHasChanged(); // Immediate refresh when any todo changes
     }
 }

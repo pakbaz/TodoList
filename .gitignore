@@ -482,3 +482,18 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Additional project-specific ignores
+# SQLite database files
+*.db
+*.sqlite*
+
+# Temporary files
+temp.*
+*.tmp
+
+# Backup files
+*.bak
+*.old
+Program.Simple.cs
+CONVERSION-SUMMARY.md
