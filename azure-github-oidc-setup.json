@@ -1,0 +1,18 @@
+﻿{
+    "gitHubOrg":  "pakbaz",
+    "appId":  "63b0cc38-b624-450d-8dab-4b9c10333d50",
+    "createdAt":  "2025-06-30 14:06:10",
+    "subscriptionId":  "31123a85-42f7-4b2c-a74f-3c580102fb48",
+    "tenantId":  "16b3c013-d300-468d-ac64-7eda0820b6d3",
+    "variables":  {
+                      "AZURE_LOCATION":  "eastus",
+                      "AZURE_RESOURCE_GROUP":  "rg-todolist-dev"
+                  },
+    "gitHubRepo":  "TodoList",
+    "secrets":  {
+                    "AZURE_SUBSCRIPTION_ID":  "31123a85-42f7-4b2c-a74f-3c580102fb48",
+                    "AZURE_TENANT_ID":  "16b3c013-d300-468d-ac64-7eda0820b6d3",
+                    "AZURE_CLIENT_ID":  "63b0cc38-b624-450d-8dab-4b9c10333d50"
+                },
+    "appName":  "TodoList-GitHub-Actions-OIDC"
+}

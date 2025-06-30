@@ -13,8 +13,8 @@
         @foreach (var todo in todos)
         {
             <div class="todo-item @(todo.IsDone ? "done" : "")">
-                <input type="checkbox" class="todo-checkbox" @bind="todo.IsDone" @bind:after="OnTodoChanged" />
-                <input class="todo-input" @bind="todo.Title" @bind:after="OnTodoChanged" />
+                <input type="checkbox" class="todo-checkbox" @bind="todo.IsDone" @bind:after="() => OnTodoChanged(todo)" />
+                <input class="todo-input" @bind="todo.Title" @bind:after="() => OnTodoChanged(todo)" />
             </div>
         }
     </div>
@@ -51,8 +51,9 @@
         todos = allTodos.ToList();
     }
 
-    private async Task OnTodoChanged()
+    private async Task OnTodoChanged(TodoItem todo)
     {
+        await TodoService.UpdateAsync(todo);
         await LoadTodos();
         StateHasChanged();
     }

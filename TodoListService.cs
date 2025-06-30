@@ -71,4 +71,21 @@ public class TodoListService
         var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
         return await context.TodoItems.CountAsync();
     }
+    
+    public async Task UpdateAsync(TodoItem item)
+    {
+        if (item == null || string.IsNullOrWhiteSpace(item.Title))
+            return;
+            
+        using var scope = _scopeFactory.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
+        
+        var existingItem = await context.TodoItems.FirstOrDefaultAsync(t => t.Id == item.Id);
+        if (existingItem != null)
+        {
+            existingItem.Title = item.Title;
+            existingItem.IsDone = item.IsDone;
+            await context.SaveChangesAsync();
+        }
+    }
 }

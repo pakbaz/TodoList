@@ -29,6 +29,17 @@ void ConfigureServices(WebApplicationBuilder builder)
             options.UseSqlite(sqliteConnection));
     }
 
+    // CORS configuration for MCP clients
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(policy =>
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        });
+    });
+
     // Blazor services
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
@@ -48,6 +59,9 @@ async Task ConfigureAppAsync(WebApplication app)
         app.UseExceptionHandler("/Error", createScopeForErrors: true);
         app.UseHsts();
     }
+
+    // Enable CORS
+    app.UseCors();
 
     app.UseAntiforgery();
 
@@ -140,38 +154,82 @@ async Task InitializeDatabaseAsync(WebApplication app)
 
 async Task<IResult> HandleMcpProtocol(HttpContext context, TodoListService service)
 {
+    var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+    
     try 
     {
         using var reader = new StreamReader(context.Request.Body);
         var requestBody = await reader.ReadToEndAsync();
+        
+        logger.LogInformation("MCP Request received: {RequestBody}", requestBody);
+        
+        if (string.IsNullOrWhiteSpace(requestBody))
+        {
+            logger.LogWarning("Empty MCP request body");
+            return Results.BadRequest(new { 
+                jsonrpc = "2.0", 
+                id = (int?)null, 
+                error = new { code = -32700, message = "Empty request body" } 
+            });
+        }
+        
         var jsonRequest = System.Text.Json.JsonDocument.Parse(requestBody);
         
-        if (!jsonRequest.RootElement.TryGetProperty("method", out var method) || 
-            !jsonRequest.RootElement.TryGetProperty("id", out var id))
+        if (!jsonRequest.RootElement.TryGetProperty("method", out var method))
         {
-            return Results.BadRequest(new { error = "Invalid MCP request format" });
+            logger.LogWarning("Invalid MCP request format: missing method");
+            return Results.BadRequest(new { 
+                jsonrpc = "2.0", 
+                id = (int?)null, 
+                error = new { code = -32600, message = "Invalid MCP request format" } 
+            });
         }
 
         var methodName = method.GetString();
-        var responseId = id.GetInt32();
+        var hasId = jsonRequest.RootElement.TryGetProperty("id", out var id);
+        var responseId = hasId ? id.GetInt32() : (int?)null;
+        
+        logger.LogInformation("Processing MCP method: {Method} with ID: {Id}", methodName, responseId);
+        
+        // Handle notifications (no response needed)
+        if (!hasId && methodName?.StartsWith("notifications/") == true)
+        {
+            logger.LogInformation("Handling notification: {Method}", methodName);
+            return Results.Ok();
+        }
         
         object result = methodName switch
         {
             "initialize" => CreateInitializeResponse(),
             "tools/list" => CreateToolsListResponse(),
             "tools/call" => await HandleToolCallAsync(jsonRequest, service),
+            "ping" => new { acknowledged = true },
+            "notifications/initialized" => new { acknowledged = true },
             _ => new { error = $"Unknown method: {methodName}" }
         };
         
         var response = new { jsonrpc = "2.0", id = responseId, result };
+        logger.LogInformation("MCP Response: {Response}", System.Text.Json.JsonSerializer.Serialize(response));
         return Results.Ok(response);
     }
-    catch (Exception ex)
+    catch (System.Text.Json.JsonException jsonEx)
     {
+        logger.LogError(jsonEx, "JSON parsing error in MCP request");
         var errorResponse = new {
             jsonrpc = "2.0",
             id = (int?)null,
-            error = new { code = -32700, message = "Parse error", data = ex.Message }
+            error = new { code = -32700, message = "Parse error", data = jsonEx.Message }
+        };
+        
+        return Results.BadRequest(errorResponse);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Unexpected error in MCP request handling");
+        var errorResponse = new {
+            jsonrpc = "2.0",
+            id = (int?)null,
+            error = new { code = -32603, message = "Internal error", data = ex.Message }
         };
         
         return Results.BadRequest(errorResponse);
@@ -179,8 +237,14 @@ async Task<IResult> HandleMcpProtocol(HttpContext context, TodoListService servi
 }
 
 object CreateInitializeResponse() => new {
+    protocolVersion = "2024-11-05",
     serverInfo = new { name = "TodoList MCP Server", version = "2.0.0" },
-    capabilities = new { tools = new { listChanged = false } }
+    capabilities = new { 
+        tools = new { listChanged = false },
+        logging = new { },
+        prompts = new { },
+        resources = new { }
+    }
 };
 
 object CreateToolsListResponse() => new {
