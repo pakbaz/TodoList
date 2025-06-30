@@ -3,17 +3,12 @@ FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 
 WORKDIR /src
 
-# Set environment variables for reliable builds
-ENV NUGET_XMLDOC_MODE=skip
-ENV DOTNET_NOLOGO=1
-ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
-
 # Copy project files
 COPY TodoList.csproj .
 COPY TodoList.sln .
 
-# Restore packages with verbose logging and forced cache refresh
-RUN dotnet restore TodoList.csproj --verbosity normal --force --no-cache
+# Restore packages with minimal options
+RUN dotnet restore TodoList.csproj
 
 # Copy source code
 COPY . .

@@ -1,10 +1,76 @@
+# .dockerignore - Optimize Docker build performance
+
 # Build artifacts
 bin/
 obj/
 out/
 publish/
 
-# Docker
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# IDE files
+.vs/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime files
+*.user
+*.suo
+*.cache
+
+# Package files
+*.nupkg
+*.snupkg
+
+# Azure and deployment files
+.azure/
+.env
+.env.local
+.env.*.local
+
+# Documentation (except README)
+*.md
+!README.md
+
+# Test files
+**/*Test*/
+**/*Tests*/
+TestResults/
+
+# Node modules (if any)
+node_modules/
+
+# Coverage reports
+coverage/
+
+# Temporary files
+tmp/
+temp/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Scripts and infrastructure
+scripts/
+infra/
+.github/
+
+# Docker files (avoid recursive copying)
 Dockerfile*
 .dockerignore
 
