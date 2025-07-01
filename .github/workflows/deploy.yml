@@ -60,10 +60,7 @@ jobs:
     - name: Deploy Infrastructure
       id: infrastructure
       run: |
-        # Get current user principal ID for Key Vault access
-        PRINCIPAL_ID=$(az ad signed-in-user show --query id --output tsv)
-        
-        # Deploy Bicep template
+        # Deploy Bicep template with placeholder image first
         DEPLOYMENT_OUTPUT=$(az deployment group create \
           --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
           --template-file infra/main.bicep \
@@ -71,9 +68,9 @@ jobs:
             environmentName=${{ env.ENVIRONMENT_NAME }} \
             location=${{ env.AZURE_LOCATION }} \
             resourceGroupName=${{ env.RESOURCE_GROUP_NAME }} \
-            principalId="$PRINCIPAL_ID" \
+            principalId="${{ env.AZURE_CLIENT_ID }}" \
             postgresAdminPassword="${{ secrets.POSTGRES_ADMIN_PASSWORD }}" \
-            imageTag="placeholder" \
+            imageTag="latest" \
           --output json)
         
         # Extract outputs
@@ -102,8 +99,6 @@ jobs:
       id: update_app
       run: |
         # Re-deploy infrastructure with the actual image tag
-        PRINCIPAL_ID=$(az ad signed-in-user show --query id --output tsv)
-        
         DEPLOYMENT_OUTPUT=$(az deployment group create \
           --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
           --template-file infra/main.bicep \
@@ -111,9 +106,9 @@ jobs:
             environmentName=${{ env.ENVIRONMENT_NAME }} \
             location=${{ env.AZURE_LOCATION }} \
             resourceGroupName=${{ env.RESOURCE_GROUP_NAME }} \
-            principalId="$PRINCIPAL_ID" \
+            principalId="${{ env.AZURE_CLIENT_ID }}" \
             postgresAdminPassword="${{ secrets.POSTGRES_ADMIN_PASSWORD }}" \
-            imageTag="${{ env.IMAGE_TAG }}" \
+            imageTag="$(echo ${{ github.sha }} | cut -c1-7)" \
           --output json)
         
         # Get app URL from deployment output

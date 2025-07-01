@@ -21,7 +21,7 @@ param imageTag string = 'latest'
 
 // Generate a unique resource token based on environment name and resource group id
 var resourceToken = toLower(uniqueString(subscription().id, resourceGroup().id, environmentName))
-var prefix = take('${environmentName}-${resourceToken}', 15) // Ensure names don't exceed limits
+var prefix = resourceToken // Use the resource token directly
 
 // Tags to be applied to all resources
 var tags = {
@@ -85,7 +85,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   location: location
   tags: tags
   sku: {
-    name: 'Standard'
+    name: 'Basic'
   }
   properties: {
     adminUserEnabled: false
@@ -132,7 +132,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
     enabledForTemplateDeployment: false
     enableSoftDelete: true
     softDeleteRetentionInDays: 7
-    enablePurgeProtection: false
+    enablePurgeProtection: true
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Allow'

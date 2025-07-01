@@ -6,16 +6,16 @@
       "value": "dev"
     },
     "location": {
-      "value": "eastus"
+      "value": "westus2"
     },
     "resourceGroupName": {
-      "value": "rg-todolist-dev"
+      "value": "rg-todolist-dev-westus2"
     },
     "principalId": {
       "value": ""
     },
     "postgresAdminPassword": {
-      "value": ""
+      "value": "TodoList2025!Secure#Pass"
     }
   }
 }
