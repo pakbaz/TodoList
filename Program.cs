@@ -1,5 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using TodoList.Components;
+using TodoList.Data;
+using TodoList.Models;
+using TodoList.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,7 +24,13 @@ void ConfigureServices(WebApplicationBuilder builder)
     if (!string.IsNullOrEmpty(connectionString) && connectionString.Contains("Host="))
     {
         builder.Services.AddDbContext<TodoDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            options.UseNpgsql(connectionString, npgsqlOptions =>
+            {
+                npgsqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 3,
+                    maxRetryDelay: TimeSpan.FromSeconds(30),
+                    errorCodesToAdd: null);
+            }));
     }
     else
     {
@@ -28,6 +38,11 @@ void ConfigureServices(WebApplicationBuilder builder)
         builder.Services.AddDbContext<TodoDbContext>(options =>
             options.UseSqlite(sqliteConnection));
     }
+
+    // Health checks
+    builder.Services.AddHealthChecks()
+        .AddDbContextCheck<TodoDbContext>("database")
+        .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy());
 
     // CORS configuration for MCP clients
     builder.Services.AddCors(options =>
@@ -46,6 +61,12 @@ void ConfigureServices(WebApplicationBuilder builder)
 
     // Application services
     builder.Services.AddScoped<TodoListService>();
+
+    // Application Insights (Production only)
+    if (builder.Environment.IsProduction())
+    {
+        builder.Services.AddApplicationInsightsTelemetry();
+    }
 }
 
 async Task ConfigureAppAsync(WebApplication app)
@@ -62,6 +83,20 @@ async Task ConfigureAppAsync(WebApplication app)
 
     // Enable CORS
     app.UseCors();
+
+    // Add request logging middleware for MCP endpoint debugging
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/mcp"))
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+            logger.LogInformation("MCP Endpoint Request: {Method} {Path} from {UserAgent}", 
+                context.Request.Method, 
+                context.Request.Path, 
+                context.Request.Headers.UserAgent.ToString());
+        }
+        await next();
+    });
 
     app.UseAntiforgery();
 
@@ -115,8 +150,10 @@ void ConfigureMcpRoutes(WebApplication app)
         return Results.Ok(new { success = true, message = $"Updated todo: {title}" });
     });
 
-    // MCP protocol endpoint for tool integration
+    // MCP protocol endpoint for tool integration (POST only)
     app.MapPost("/mcp", HandleMcpProtocol);
+    // Handle OPTIONS requests for CORS preflight
+    app.MapMethods("/mcp", new[] { "OPTIONS" }, () => Results.Ok());
 }
 
 async Task InitializeDatabaseAsync(WebApplication app)
@@ -203,6 +240,7 @@ async Task<IResult> HandleMcpProtocol(HttpContext context, TodoListService servi
             "initialize" => CreateInitializeResponse(),
             "tools/list" => CreateToolsListResponse(),
             "tools/call" => await HandleToolCallAsync(jsonRequest, service),
+            "prompts/list" => CreatePromptsListResponse(),
             "ping" => new { acknowledged = true },
             "notifications/initialized" => new { acknowledged = true },
             _ => new { error = $"Unknown method: {methodName}" }
@@ -288,6 +326,10 @@ object CreateToolsListResponse() => new {
             inputSchema = new { type = "object", properties = new { }, required = new string[] { } }
         }
     }
+};
+
+object CreatePromptsListResponse() => new {
+    prompts = new object[] { } // Return empty array since we don't have prompts
 };
 
 async Task<object> HandleToolCallAsync(System.Text.Json.JsonDocument jsonRequest, TodoListService service)
