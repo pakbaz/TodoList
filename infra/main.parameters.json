@@ -6,10 +6,10 @@
       "value": "dev"
     },
     "location": {
-      "value": "westus2"
+      "value": "northcentralus"
     },
     "resourceGroupName": {
-      "value": "rg-todolist-dev-westus2"
+      "value": "rg-todolist-dev-ncus"
     },
     "principalId": {
       "value": ""

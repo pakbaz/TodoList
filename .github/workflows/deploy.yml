@@ -63,13 +63,11 @@ jobs:
         # Deploy Bicep template with placeholder image first
         DEPLOYMENT_OUTPUT=$(az deployment group create \
           --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-          --template-file infra/main.bicep \
+          --template-file infra/main-simple.bicep \
           --parameters \
             environmentName=${{ env.ENVIRONMENT_NAME }} \
             location=${{ env.AZURE_LOCATION }} \
             resourceGroupName=${{ env.RESOURCE_GROUP_NAME }} \
-            principalId="${{ env.AZURE_CLIENT_ID }}" \
-            postgresAdminPassword="${{ secrets.POSTGRES_ADMIN_PASSWORD }}" \
             imageTag="latest" \
           --output json)
         
@@ -101,13 +99,11 @@ jobs:
         # Re-deploy infrastructure with the actual image tag
         DEPLOYMENT_OUTPUT=$(az deployment group create \
           --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-          --template-file infra/main.bicep \
+          --template-file infra/main-simple.bicep \
           --parameters \
             environmentName=${{ env.ENVIRONMENT_NAME }} \
             location=${{ env.AZURE_LOCATION }} \
             resourceGroupName=${{ env.RESOURCE_GROUP_NAME }} \
-            principalId="${{ env.AZURE_CLIENT_ID }}" \
-            postgresAdminPassword="${{ secrets.POSTGRES_ADMIN_PASSWORD }}" \
             imageTag="$(echo ${{ github.sha }} | cut -c1-7)" \
           --output json)
         
