@@ -4,7 +4,10 @@ variable "resource_group_name" { type = string }
 variable "tags" { type = map(string) }
 variable "environment_name_suffix" { type = string }
 variable "log_analytics_workspace_id" { type = string }
-variable "containerapps_subnet_id" { type = string default = null }
+variable "containerapps_subnet_id" { 
+  type = string 
+  default = null 
+}
 variable "acr_login_server" { type = string }
 variable "acr_id" { type = string }
 variable "image_repository" { type = string }
@@ -44,26 +47,51 @@ resource "azurerm_container_app" "app" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   revision_mode                = "Single"
   tags                         = var.tags
-  identity { type = "UserAssigned" identity_ids = [azurerm_user_assigned_identity.uami.id] }
+  identity { 
+    type = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.uami.id] 
+  }
   template {
+    min_replicas = var.autoscale_min_replicas
+    max_replicas = var.autoscale_max_replicas
     container {
       name   = "todolist"
       image  = "${var.acr_login_server}/${var.image_repository}:${var.image_tag}"
       cpu    = var.cpu
       memory = "${var.memory_gi}Gi"
-      env { name = "ConnectionStrings__DefaultConnection" value = var.default_connection_string }
-      env { name = "ASPNETCORE_ENVIRONMENT" value = var.environment == "prod" ? "Production" : "Development" }
+      env { 
+        name = "ConnectionStrings__DefaultConnection"
+        value = var.default_connection_string 
+      }
+      env { 
+        name = "ASPNETCORE_ENVIRONMENT"
+        value = var.environment == "prod" ? "Production" : "Development" 
+      }
     }
-    scale {
-      min_replicas = var.autoscale_min_replicas
-      max_replicas = var.autoscale_max_replicas
-      rule { name = "http-concurrency" http { concurrent_requests = 50 } }
+    http_scale_rule {
+      name = "http-concurrency"
+      concurrent_requests = 50
     }
   }
-  ingress { external_enabled = true target_port = 8080 transport = "auto" }
-  registry { server = var.acr_login_server identity = azurerm_user_assigned_identity.uami.id }
+  ingress { 
+    external_enabled = true 
+    target_port = 8080 
+    transport = "auto"
+    traffic_weight {
+      latest_revision = true
+      percentage = 100
+    }
+  }
+  registry { 
+    server = var.acr_login_server 
+    identity = azurerm_user_assigned_identity.uami.id 
+  }
   depends_on = [azurerm_role_assignment.acr_pull]
 }
 
-output "container_app_name" { value = azurerm_container_app.app.name }
-output "fqdn" { value = azurerm_container_app.app.latest_revision_fqdn }
+output "container_app_name" { 
+  value = azurerm_container_app.app.name 
+}
+output "fqdn" { 
+  value = azurerm_container_app.app.latest_revision_fqdn 
+}

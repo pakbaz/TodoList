@@ -17,9 +17,15 @@ resource "azurerm_resource_group" "main" {
   tags     = local.tags
 }
 
-locals { rg_name = var.resource_group_name == "" ? azurerm_resource_group.main[0].name : var.resource_group_name }
+locals { 
+  rg_name = var.resource_group_name == "" ? azurerm_resource_group.main[0].name : var.resource_group_name 
+}
 
-resource "random_string" "suffix" { length = 5 special = false upper = false }
+resource "random_string" "suffix" { 
+  length = 5
+  special = false
+  upper = false 
+}
 
 ############################################
 # Networking (optional)
@@ -41,7 +47,10 @@ resource "azurerm_subnet" "subnet_containerapps" {
   address_prefixes     = ["10.20.1.0/24"]
   delegation {
     name = "delegation"
-    service_delegation { name = "Microsoft.App/environments" actions = ["Microsoft.Network/virtualNetworks/subnets/action"] }
+    service_delegation { 
+      name = "Microsoft.App/environments"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"] 
+    }
   }
 }
 
@@ -51,7 +60,13 @@ resource "azurerm_subnet" "subnet_postgres" {
   resource_group_name  = local.rg_name
   virtual_network_name = azurerm_virtual_network.vnet[0].name
   address_prefixes     = ["10.20.2.0/24"]
-  delegation { name = "pgdelegation" service_delegation { name = "Microsoft.DBforPostgreSQL/flexibleServers" actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"] } }
+  delegation { 
+    name = "pgdelegation"
+    service_delegation { 
+      name = "Microsoft.DBforPostgreSQL/flexibleServers"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"] 
+    } 
+  }
 }
 
 ############################################
@@ -89,7 +104,7 @@ module "postgres" {
   resource_group_name   = local.rg_name
   admin_user            = var.postgres_admin_user
   admin_password        = var.postgres_admin_password
-  version               = var.postgres_version
+  postgres_version      = var.postgres_version
   storage_mb            = var.postgres_storage_mb
   sku_name              = var.postgres_sku_name
   delegated_subnet_id   = var.enable_vnet ? azurerm_subnet.subnet_postgres[0].id : null
