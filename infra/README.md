@@ -152,6 +152,3 @@ terraform destroy -var "environment=dev"
 - Private Endpoints for Postgres & Key Vault
 - Key Vault secret reference injection instead of plain env vars
 - Dapr sidecar for event-driven enhancements
-
----
-Maintained with Terraform following Azure recommended patterns.
