@@ -11,7 +11,7 @@ variable "environment" {
 variable "location" { 
   description = "Azure region"
   type = string
-  default = "eastus" 
+  default = "centralus" 
 }
 variable "resource_group_name" { 
   description = "If provided, use existing RG name instead of creating"
