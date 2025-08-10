@@ -10,6 +10,15 @@ on:
       - 'TodoList.csproj'
       - 'Components/**'
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - production
 
 permissions:
   id-token: write
@@ -23,6 +32,7 @@ env:
 jobs:
   terraform:
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
     defaults:
       run:
         working-directory: infra
