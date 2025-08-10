@@ -2,6 +2,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 
 WORKDIR /src
+# Disable NuGet fallback folders for cloud builds
+ENV NUGET_FALLBACK_PACKAGES=""
 
 # Set environment variables for reliable builds
 ENV NUGET_XMLDOC_MODE=skip
@@ -12,14 +14,14 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 COPY TodoList.csproj .
 COPY TodoList.sln .
 
-# Restore packages with verbose logging and forced cache refresh
-RUN dotnet restore TodoList.csproj --verbosity normal --force --no-cache
+# Restore packages with verbose logging and forced cache refresh, and disable fallback folders
+RUN dotnet restore TodoList.csproj --verbosity normal --force --no-cache /p:RestoreFallbackFolders=""
 
 # Copy source code
 COPY . .
 
-# Build the application
-RUN dotnet build TodoList.csproj -c Release --no-restore
+# Build the application with fallback folders disabled
+RUN dotnet build TodoList.csproj -c Release --no-restore /p:RestoreFallbackFolders=""
 
 # Publish the application
 RUN dotnet publish TodoList.csproj -c Release --no-build -o /app/publish
