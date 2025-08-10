@@ -1,7 +1,7 @@
 {
-    "servers": {
-        "todo-mcp-server": {
-            "url": "http://localhost:8080/mcp"
-        }
-    }
+    // "servers": {
+    //     "todo-mcp-server": {
+    //         "url": "http://localhost:8080/mcp"
+    //     }
+    // }
 }
