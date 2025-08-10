@@ -65,7 +65,7 @@ jobs:
       run: dotnet test --no-build --configuration Release --verbosity normal
 
     - name: Publish application
-      run: dotnet publish --no-build --configuration Release --output ./publish
+      run: dotnet publish TodoList.csproj --no-build --configuration Release --output ./publish
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -83,10 +83,32 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Run CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
       with:
         languages: csharp
+        config-file: ./.github/codeql/codeql-config.yml
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build for CodeQL
+      run: dotnet build --no-restore --configuration Release
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:csharp"
+
+    - name: Run .NET Security Audit
+      run: |
+        dotnet list package --vulnerable --include-transitive || true
+        dotnet format --verify-no-changes --verbosity diagnostic || true
 
     - name: Run Dependency Check
       uses: dependency-check/Dependency-Check_Action@main
@@ -94,11 +116,17 @@ jobs:
         project: 'TodoList'
         path: '.'
         format: 'SARIF'
-        
-    - name: Upload SARIF results
+        args: >
+          --enableRetired
+          --enableExperimental
+          --disableAssembly
+          
+    - name: Upload Dependency Check SARIF
       uses: github/codeql-action/upload-sarif@v3
+      if: always()
       with:
         sarif_file: reports/dependency-check-report.sarif
+        category: dependency-check
 
   deploy:
     name: Deploy to Azure

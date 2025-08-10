@@ -48,8 +48,8 @@ jobs:
       - name: Restore & Build
         working-directory: .
         run: |
-          dotnet restore
-          dotnet build --configuration Release --no-restore
+          dotnet restore TodoList.csproj
+          dotnet build TodoList.csproj --configuration Release --no-restore
 
       - name: Run Tests (if any)
         working-directory: .
