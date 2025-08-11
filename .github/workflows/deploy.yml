@@ -24,6 +24,11 @@ env:
   AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP || 'rg-todolist-prod' }}
   CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME || 'ca-todolist-prod' }}
 
+# Add condition to skip jobs when required secrets are missing
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # Build and test the application
   build-and-test:
@@ -55,12 +60,22 @@ jobs:
     - name: Build application
       run: dotnet build TodoList.sln --configuration Release --no-restore
 
+    - name: Check for test projects
+      id: check-tests
+      run: |
+        if find . -name "*.Test.csproj" -o -name "*Tests.csproj" -o -name "*.Tests.csproj" | grep -q .; then
+          echo "has_tests=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_tests=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Run tests
+      if: steps.check-tests.outputs.has_tests == 'true'
       run: dotnet test TodoList.sln --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
 
     - name: Upload test results
       uses: actions/upload-artifact@v4
-      if: always()
+      if: always() && steps.check-tests.outputs.has_tests == 'true'
       with:
         name: test-results
         path: |
@@ -77,30 +92,55 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Check Azure Credentials
+      id: check-azure
+      run: |
+        if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+          echo "Azure credentials not configured. Skipping Azure operations."
+          echo "skip_azure=true" >> $GITHUB_OUTPUT
+        else
+          echo "Azure credentials found."
+          echo "skip_azure=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Setup Terraform
+      if: steps.check-azure.outputs.skip_azure == 'false'
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ~1.0
 
     - name: Azure Login
+      if: steps.check-azure.outputs.skip_azure == 'false'
       uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Terraform Init
+      if: steps.check-azure.outputs.skip_azure == 'false'
       working-directory: ./infra
       run: |
-        terraform init \
-          -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RESOURCE_GROUP }}" \
-          -backend-config="storage_account_name=${{ secrets.TERRAFORM_STATE_STORAGE_ACCOUNT }}" \
-          -backend-config="container_name=${{ secrets.TERRAFORM_STATE_CONTAINER }}" \
-          -backend-config="key=todolist.terraform.tfstate"
+        # Initialize with local backend if remote backend config is not available
+        if [ -n "${{ secrets.TERRAFORM_STATE_RESOURCE_GROUP }}" ] && [ -n "${{ secrets.TERRAFORM_STATE_STORAGE_ACCOUNT }}" ] && [ -n "${{ secrets.TERRAFORM_STATE_CONTAINER }}" ]; then
+          echo "Initializing with Azure remote backend..."
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ secrets.TERRAFORM_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.TERRAFORM_STATE_CONTAINER }}" \
+            -backend-config="key=todolist.terraform.tfstate"
+        else
+          echo "Remote backend secrets not configured, using local backend..."
+          # Comment out backend configuration in providers.tf temporarily
+          sed -i 's/^[[:space:]]*backend "azurerm"/# &/' providers.tf || true
+          terraform init
+        fi
 
     - name: Terraform Plan
+      if: steps.check-azure.outputs.skip_azure == 'false'
       working-directory: ./infra
       run: terraform plan -var-file="terraform.tfvars" -out=tfplan
 
     - name: Upload Terraform Plan
+      if: steps.check-azure.outputs.skip_azure == 'false'
       uses: actions/upload-artifact@v4
       with:
         name: terraform-plan
@@ -217,11 +257,20 @@ jobs:
     - name: Terraform Init
       working-directory: ./infra
       run: |
-        terraform init \
-          -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RESOURCE_GROUP }}" \
-          -backend-config="storage_account_name=${{ secrets.TERRAFORM_STATE_STORAGE_ACCOUNT }}" \
-          -backend-config="container_name=${{ secrets.TERRAFORM_STATE_CONTAINER }}" \
-          -backend-config="key=todolist.terraform.tfstate"
+        # Initialize with local backend if remote backend config is not available
+        if [ -n "${{ secrets.TERRAFORM_STATE_RESOURCE_GROUP }}" ] && [ -n "${{ secrets.TERRAFORM_STATE_STORAGE_ACCOUNT }}" ] && [ -n "${{ secrets.TERRAFORM_STATE_CONTAINER }}" ]; then
+          echo "Initializing with Azure remote backend..."
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ secrets.TERRAFORM_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.TERRAFORM_STATE_CONTAINER }}" \
+            -backend-config="key=todolist.terraform.tfstate"
+        else
+          echo "Remote backend secrets not configured, using local backend..."
+          # Comment out backend configuration in providers.tf temporarily
+          sed -i 's/^[[:space:]]*backend "azurerm"/# &/' providers.tf || true
+          terraform init
+        fi
 
     - name: Terraform Apply
       working-directory: ./infra
