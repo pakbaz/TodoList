@@ -46,13 +46,11 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Restore & Build
-        working-directory: ../
         run: |
           dotnet restore
           dotnet build --configuration Release --no-restore
 
       - name: Run Tests (if any)
-        working-directory: ../
         run: |
           if ls *Tests*.csproj 1> /dev/null 2>&1; then
             dotnet test --no-build --configuration Release
@@ -73,10 +71,12 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Terraform Init
+        working-directory: infra
         run: terraform init
 
       - name: Terraform Plan
         id: plan
+        working-directory: infra
         run: |
           terraform plan \
             -var "environment=dev" \
@@ -87,10 +87,12 @@ jobs:
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
+        working-directory: infra
         run: terraform apply tfplan
 
       - name: Extract Outputs
         id: tfouts
+        working-directory: infra
         run: |
           echo "acr=$(terraform output -raw container_registry_login_server)" >> $GITHUB_OUTPUT
           echo "rg=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
@@ -108,7 +110,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           az acr login --name ${{ steps.acrname.outputs.acr_name }}
-          docker build -t ${{ steps.tfouts.outputs.acr }}/${{ env.ACR_IMAGE_NAME }}:${{ github.sha }} ..
+          docker build -t ${{ steps.tfouts.outputs.acr }}/${{ env.ACR_IMAGE_NAME }}:${{ github.sha }} .
           docker push ${{ steps.tfouts.outputs.acr }}/${{ env.ACR_IMAGE_NAME }}:${{ github.sha }}
 
       - name: Update Container App Image
