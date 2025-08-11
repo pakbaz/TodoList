@@ -1,0 +1,422 @@
+name: Deploy TodoList to Azure
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+        - prod
+        - staging
+        - dev
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  CONTAINER_REGISTRY: ${{ vars.CONTAINER_REGISTRY || 'crtodolistprod' }}
+  CONTAINER_IMAGE: todolist
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP || 'rg-todolist-prod' }}
+  CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME || 'ca-todolist-prod' }}
+
+jobs:
+  # Build and test the application
+  build-and-test:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Restore dependencies
+      run: dotnet restore TodoList.sln
+
+    - name: Build application
+      run: dotnet build TodoList.sln --configuration Release --no-restore
+
+    - name: Run tests
+      run: dotnet test TodoList.sln --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: |
+          **/TestResults/**/*
+          **/coverage.cobertura.xml
+
+  # Infrastructure deployment with Terraform
+  terraform-plan:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ~1.0
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Terraform Init
+      working-directory: ./infra
+      run: |
+        terraform init \
+          -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RESOURCE_GROUP }}" \
+          -backend-config="storage_account_name=${{ secrets.TERRAFORM_STATE_STORAGE_ACCOUNT }}" \
+          -backend-config="container_name=${{ secrets.TERRAFORM_STATE_CONTAINER }}" \
+          -backend-config="key=todolist.terraform.tfstate"
+
+    - name: Terraform Plan
+      working-directory: ./infra
+      run: terraform plan -var-file="terraform.tfvars" -out=tfplan
+
+    - name: Upload Terraform Plan
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-plan
+        path: infra/tfplan
+
+  # Build and push Docker image
+  docker-build-push:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Login to Azure Container Registry
+      run: |
+        az acr login --name ${{ env.CONTAINER_REGISTRY }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '${{ env.CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_IMAGE }}:latest'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Deploy infrastructure
+  terraform-apply:
+    runs-on: ubuntu-latest
+    needs: [terraform-plan, docker-build-push]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ~1.0
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Create terraform.tfvars
+      working-directory: ./infra
+      run: |
+        cat > terraform.tfvars << EOF
+        environment = "${{ github.event.inputs.environment || 'prod' }}"
+        location = "East US"
+        project_name = "todolist"
+        postgresql_sku_name = "B_Standard_B1ms"
+        postgresql_storage_mb = 32768
+        postgresql_version = "15"
+        postgresql_admin_username = "psqladmin"
+        container_app_min_replicas = 1
+        container_app_max_replicas = 5
+        container_cpu = "0.5"
+        container_memory = "1Gi"
+        container_registry_sku = "Basic"
+        enable_application_insights = true
+        enable_managed_identity = true
+        enable_https_only = true
+        enable_container_app_ingress = true
+        tags = {
+          Project = "TodoList"
+          Environment = "${{ github.event.inputs.environment || 'prod' }}"
+          ManagedBy = "GitHub Actions"
+          Repository = "${{ github.repository }}"
+        }
+        EOF
+
+    - name: Terraform Init
+      working-directory: ./infra
+      run: |
+        terraform init \
+          -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RESOURCE_GROUP }}" \
+          -backend-config="storage_account_name=${{ secrets.TERRAFORM_STATE_STORAGE_ACCOUNT }}" \
+          -backend-config="container_name=${{ secrets.TERRAFORM_STATE_CONTAINER }}" \
+          -backend-config="key=todolist.terraform.tfstate"
+
+    - name: Terraform Apply
+      working-directory: ./infra
+      run: terraform apply -var-file="terraform.tfvars" -auto-approve
+
+    - name: Get Terraform Outputs
+      id: terraform-outputs
+      working-directory: ./infra
+      run: |
+        echo "container_app_name=$(terraform output -raw container_app_name)" >> $GITHUB_OUTPUT
+        echo "resource_group_name=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
+        echo "container_registry_name=$(terraform output -raw container_registry_name)" >> $GITHUB_OUTPUT
+        echo "container_app_url=$(terraform output -raw container_app_url)" >> $GITHUB_OUTPUT
+
+    - name: Update Environment Variables
+      run: |
+        echo "CONTAINER_APP_NAME=${{ steps.terraform-outputs.outputs.container_app_name }}" >> $GITHUB_ENV
+        echo "AZURE_RESOURCE_GROUP=${{ steps.terraform-outputs.outputs.resource_group_name }}" >> $GITHUB_ENV
+        echo "CONTAINER_REGISTRY=${{ steps.terraform-outputs.outputs.container_registry_name }}" >> $GITHUB_ENV
+
+  # Deploy application to Container Apps
+  deploy-app:
+    runs-on: ubuntu-latest
+    needs: [docker-build-push, terraform-apply]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Get Container App Name from Terraform
+      id: get-app-name
+      run: |
+        # Try to get from Terraform state or use environment variable
+        APP_NAME=$(az containerapp list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" -o tsv 2>/dev/null || echo "${{ env.CONTAINER_APP_NAME }}")
+        echo "container_app_name=$APP_NAME" >> $GITHUB_OUTPUT
+
+    - name: Update Container App
+      run: |
+        az containerapp update \
+          --name ${{ steps.get-app-name.outputs.container_app_name }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --image ${{ env.CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_IMAGE }}:latest
+
+    - name: Wait for deployment
+      run: |
+        echo "Waiting for deployment to complete..."
+        sleep 60
+
+    - name: Get application URL
+      id: get-url
+      run: |
+        APP_URL=$(az containerapp show \
+          --name ${{ steps.get-app-name.outputs.container_app_name }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "properties.configuration.ingress.fqdn" -o tsv)
+        echo "app_url=https://$APP_URL" >> $GITHUB_OUTPUT
+
+    - name: Health check
+      run: |
+        URL="${{ steps.get-url.outputs.app_url }}/health"
+        echo "Checking health endpoint: $URL"
+        
+        for i in {1..10}; do
+          if curl -f -s --max-time 10 "$URL"; then
+            echo "✅ Health check passed"
+            exit 0
+          fi
+          echo "⏳ Health check attempt $i failed, retrying in 30 seconds..."
+          sleep 30
+        done
+        
+        echo "❌ Health check failed after 10 attempts"
+        exit 1
+
+    - name: Run smoke tests
+      run: |
+        URL="${{ steps.get-url.outputs.app_url }}"
+        echo "Running smoke tests against: $URL"
+        
+        # Test home page
+        echo "Testing home page..."
+        curl -f -s --max-time 30 "$URL" > /dev/null
+        
+        # Test MCP endpoints
+        echo "Testing MCP endpoint..."
+        curl -f -s --max-time 30 "$URL/mcp/v1/tools" > /dev/null
+        
+        echo "✅ Smoke tests passed"
+
+  # Post-deployment verification and cleanup
+  post-deployment:
+    runs-on: ubuntu-latest
+    needs: deploy-app
+    if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    
+    steps:
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Get deployment status
+      id: status
+      run: |
+        APP_NAME=$(az containerapp list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" -o tsv)
+        STATUS=$(az containerapp show --name "$APP_NAME" --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "properties.runningStatus" -o tsv)
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+
+    - name: Get application insights
+      if: success()
+      run: |
+        AI_NAME=$(az monitor app-insights component list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" -o tsv 2>/dev/null || echo "Not found")
+        echo "Application Insights: $AI_NAME"
+
+    - name: Clean up old revisions
+      if: success()
+      run: |
+        echo "Cleaning up old container app revisions..."
+        az containerapp revision list \
+          --name ${{ steps.status.outputs.app_name }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "[?properties.active==\`false\`].name" -o tsv | \
+        head -n -2 | \
+        xargs -r -I {} az containerapp revision deactivate \
+          --name ${{ steps.status.outputs.app_name }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --revision {}
+
+    - name: Clean up old container images
+      if: success()
+      run: |
+        echo "Cleaning up old container images (keep last 5)..."
+        az acr repository show-tags \
+          --name ${{ env.CONTAINER_REGISTRY }} \
+          --repository ${{ env.CONTAINER_IMAGE }} \
+          --orderby time_desc \
+          --output tsv | \
+        tail -n +6 | \
+        xargs -r -I {} az acr repository delete \
+          --name ${{ env.CONTAINER_REGISTRY }} \
+          --image ${{ env.CONTAINER_IMAGE }}:{} \
+          --yes
+
+    - name: Summary
+      run: |
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Application | ${{ steps.status.outputs.status }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Environment | ${{ github.event.inputs.environment || 'prod' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Container App | ${{ steps.status.outputs.app_name }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Resource Group | ${{ env.AZURE_RESOURCE_GROUP }} |" >> $GITHUB_STEP_SUMMARY
+
+  # Notification on failure
+  notify-failure:
+    runs-on: ubuntu-latest
+    needs: [build-and-test, terraform-apply, deploy-app]
+    if: failure() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    
+    steps:
+    - name: Create GitHub issue on failure
+      if: github.ref == 'refs/heads/main'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = `Deployment Failed - ${new Date().toISOString()}`;
+          const body = `
+          ## Deployment Failure Report
+          
+          **Workflow**: ${context.workflow}
+          **Run ID**: ${context.runId}
+          **Commit**: ${context.sha}
+          **Branch**: ${context.ref}
+          **Actor**: ${context.actor}
+          
+          **Failed Jobs**:
+          ${{ toJSON(needs) }}
+          
+          Please check the workflow logs for more details.
+          
+          [View Workflow Run](${context.payload.repository.html_url}/actions/runs/${context.runId})
+          `;
+          
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['bug', 'deployment-failure', 'urgent']
+          });

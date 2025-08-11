@@ -1,0 +1,60 @@
+# Example terraform.tfvars file
+# Copy this file to terraform.tfvars and customize the values for your environment
+
+# Environment Configuration
+environment  = "prod"
+location     = "East US"
+project_name = "todolist"
+
+# PostgreSQL Configuration
+postgresql_sku_name              = "B_Standard_B1ms" # Burstable tier for cost optimization
+postgresql_storage_mb            = 32768             # 32 GB storage
+postgresql_version               = "15"
+postgresql_admin_username        = "psqladmin"
+postgresql_backup_retention_days = 7
+
+# Container Apps Configuration
+container_app_min_replicas = 1
+container_app_max_replicas = 5
+container_cpu              = "0.5"
+container_memory           = "1Gi"
+
+# Container Registry Configuration
+container_registry_sku = "Basic"
+
+# Monitoring Configuration
+log_analytics_sku            = "PerGB2018"
+log_analytics_retention_days = 30
+enable_application_insights  = true
+enable_detailed_monitoring   = true
+
+# Security and Networking Configuration
+enable_zone_redundancy       = false
+enable_backup_geo_redundancy = false
+enable_private_endpoint      = false
+enable_managed_identity      = true
+enable_https_only            = true
+enable_container_app_ingress = true
+
+# Development Features (set to false for production)
+enable_development_features = false
+
+# Allowed IP ranges for PostgreSQL access (optional)
+# Format: ["IP1", "IP2-IP3"] for single IPs or ranges
+# allowed_ip_ranges = ["203.0.113.0", "198.51.100.0-198.51.100.255"]
+allowed_ip_ranges = []
+
+# Resource Tags
+tags = {
+  Project     = "TodoList"
+  Environment = "Production"
+  ManagedBy   = "Terraform"
+  Owner       = "Development Team"
+  CostCenter  = "Engineering"
+  Purpose     = "Web Application"
+}
+
+# Application Configuration
+application_name     = "todolist"
+container_image_name = "todolist"
+container_image_tag  = "latest"
