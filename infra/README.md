@@ -102,25 +102,12 @@ A workflow (`.github/workflows/terraform-deploy.yml`) handles:
 5. Build & push image to ACR (only on changes to app or Dockerfile)
 6. Update Container App with new image tag (Git SHA)
 
-Additional workflows for quality assurance:
-- `.github/workflows/build-test.yml` - Build, test, and Docker validation on PRs
-- `.github/workflows/deploy.yml` - Full deployment with security scanning
-
-### Security Scanning
-Automated security scanning includes:
-- **CodeQL Analysis** - Static application security testing (SAST)
-- **Dependency Scanning** - Vulnerable package detection
-- **.NET Security Audit** - Built-in vulnerability scanning
-- **SARIF Upload** - Results integrated into GitHub Security tab
-
 Required GitHub Actions Variables / Secrets:
 - `AZURE_SUBSCRIPTION_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_CLIENT_ID` (federated credential for OIDC)
-- `AZURE_RESOURCE_GROUP` (specific resource group name)
-- `AZURE_LOCATION` (Azure region)
 - `TF_VAR_postgres_admin_password` (secret) or supply via Key Vault after first deploy
-- Optional: `ENVIRONMENT` for environment-specific configuration
+- Optional: `TF_VAR_location` if overriding default
 
 ## 🔧 Key Variables
 | Name | Description | Default |

@@ -48,8 +48,8 @@ jobs:
       - name: Restore & Build
         working-directory: .
         run: |
-          dotnet restore TodoList.csproj
-          dotnet build TodoList.csproj --configuration Release --no-restore
+          dotnet restore
+          dotnet build --configuration Release --no-restore
 
       - name: Run Tests (if any)
         working-directory: .
@@ -72,44 +72,16 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Verify Azure Authentication
-        run: |
-          echo "Testing Azure authentication..."
-          az account show
-          az group list --output table
-
       - name: Terraform Init
-        timeout-minutes: 10
-        run: |
-          echo "Initializing Terraform..."
-          terraform init -no-color
-          echo "Terraform initialization completed"
+        run: terraform init
 
       - name: Terraform Plan
         id: plan
-        timeout-minutes: 15
-        env:
-          TF_LOG: INFO
-          TF_VAR_environment: ${{ github.event.inputs.environment || 'dev' }}
-          TF_VAR_location: ${{ vars.AZURE_LOCATION || 'centralus' }}
-          TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP || 'rg-todolist-dev-centralus' }}
-        run: |
-          echo "Starting Terraform Plan..."
-          echo "Environment: $TF_VAR_environment"
-          echo "Location: $TF_VAR_location" 
-          echo "Resource Group: $TF_VAR_resource_group_name"
-          terraform plan -no-color -detailed-exitcode -out tfplan
-          echo "Terraform plan completed successfully"
+        run: terraform plan -var "environment=dev" -out tfplan
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
-        timeout-minutes: 30
-        env:
-          TF_LOG: INFO
-        run: |
-          echo "Starting Terraform Apply..."
-          terraform apply -no-color tfplan
-          echo "Terraform apply completed successfully"
+        run: terraform apply tfplan
 
       - name: Extract Outputs
         id: tfouts
