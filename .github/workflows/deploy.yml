@@ -17,6 +17,12 @@ on:
         - staging
         - dev
 
+permissions:
+  contents: read
+  issues: write
+  security-events: write
+  actions: read
+
 env:
   DOTNET_VERSION: '9.0.x'
   CONTAINER_REGISTRY: ${{ vars.CONTAINER_REGISTRY || 'crtodolistprod' }}
@@ -159,12 +165,25 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
+    - name: Check Azure Credentials
+      id: check-azure
+      run: |
+        if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+          echo "Azure credentials not configured. Skipping Azure operations."
+          echo "skip_azure=true" >> $GITHUB_OUTPUT
+        else
+          echo "Azure credentials found."
+          echo "skip_azure=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Azure Login
+      if: steps.check-azure.outputs.skip_azure == 'false'
       uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Login to Azure Container Registry
+      if: steps.check-azure.outputs.skip_azure == 'false'
       run: |
         az acr login --name ${{ env.CONTAINER_REGISTRY }}
 
@@ -179,7 +198,21 @@ jobs:
           type=sha,prefix={{branch}}-
           type=raw,value=latest,enable={{is_default_branch}}
 
-    - name: Build and push Docker image
+    - name: Build Docker image (local only when Azure not configured)
+      if: steps.check-azure.outputs.skip_azure == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: false
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+    - name: Build and push Docker image (with Azure)
+      if: steps.check-azure.outputs.skip_azure == 'false'
       id: build
       uses: docker/build-push-action@v5
       with:
@@ -193,15 +226,26 @@ jobs:
         platforms: linux/amd64
 
     - name: Run Trivy vulnerability scanner
+      if: steps.check-azure.outputs.skip_azure == 'false'
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: '${{ env.CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_IMAGE }}:latest'
         format: 'sarif'
         output: 'trivy-results.sarif'
 
+    - name: Check if Trivy results exist
+      if: steps.check-azure.outputs.skip_azure == 'false'
+      id: trivy-check
+      run: |
+        if [ -f "trivy-results.sarif" ]; then
+          echo "trivy_results_exist=true" >> $GITHUB_OUTPUT
+        else
+          echo "trivy_results_exist=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Upload Trivy scan results
+      if: steps.check-azure.outputs.skip_azure == 'false' && steps.trivy-check.outputs.trivy_results_exist == 'true'
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
       with:
         sarif_file: 'trivy-results.sarif'
 
@@ -209,24 +253,38 @@ jobs:
   terraform-apply:
     runs-on: ubuntu-latest
     needs: [terraform-plan, docker-build-push]
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && !contains(needs.docker-build-push.result, 'skipped')
     environment: production
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Check Azure Credentials
+      id: check-azure
+      run: |
+        if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+          echo "Azure credentials not configured. Skipping Terraform deployment."
+          echo "skip_azure=true" >> $GITHUB_OUTPUT
+        else
+          echo "Azure credentials found."
+          echo "skip_azure=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Setup Terraform
+      if: steps.check-azure.outputs.skip_azure == 'false'
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ~1.0
 
     - name: Azure Login
+      if: steps.check-azure.outputs.skip_azure == 'false'
       uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Create terraform.tfvars
+      if: steps.check-azure.outputs.skip_azure == 'false'
       working-directory: ./infra
       run: |
         cat > terraform.tfvars << EOF
@@ -255,6 +313,7 @@ jobs:
         EOF
 
     - name: Terraform Init
+      if: steps.check-azure.outputs.skip_azure == 'false'
       working-directory: ./infra
       run: |
         # Initialize with local backend if remote backend config is not available
@@ -273,10 +332,12 @@ jobs:
         fi
 
     - name: Terraform Apply
+      if: steps.check-azure.outputs.skip_azure == 'false'
       working-directory: ./infra
       run: terraform apply -var-file="terraform.tfvars" -auto-approve
 
     - name: Get Terraform Outputs
+      if: steps.check-azure.outputs.skip_azure == 'false'
       id: terraform-outputs
       working-directory: ./infra
       run: |
@@ -286,6 +347,7 @@ jobs:
         echo "container_app_url=$(terraform output -raw container_app_url)" >> $GITHUB_OUTPUT
 
     - name: Update Environment Variables
+      if: steps.check-azure.outputs.skip_azure == 'false'
       run: |
         echo "CONTAINER_APP_NAME=${{ steps.terraform-outputs.outputs.container_app_name }}" >> $GITHUB_ENV
         echo "AZURE_RESOURCE_GROUP=${{ steps.terraform-outputs.outputs.resource_group_name }}" >> $GITHUB_ENV
@@ -295,19 +357,32 @@ jobs:
   deploy-app:
     runs-on: ubuntu-latest
     needs: [docker-build-push, terraform-apply]
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && !contains(needs.terraform-apply.result, 'skipped')
     environment: production
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Check Azure Credentials
+      id: check-azure
+      run: |
+        if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+          echo "Azure credentials not configured. Skipping deployment."
+          echo "skip_azure=true" >> $GITHUB_OUTPUT
+        else
+          echo "Azure credentials found."
+          echo "skip_azure=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Azure Login
+      if: steps.check-azure.outputs.skip_azure == 'false'
       uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Get Container App Name from Terraform
+      if: steps.check-azure.outputs.skip_azure == 'false'
       id: get-app-name
       run: |
         # Try to get from Terraform state or use environment variable
@@ -315,6 +390,7 @@ jobs:
         echo "container_app_name=$APP_NAME" >> $GITHUB_OUTPUT
 
     - name: Update Container App
+      if: steps.check-azure.outputs.skip_azure == 'false'
       run: |
         az containerapp update \
           --name ${{ steps.get-app-name.outputs.container_app_name }} \
@@ -322,11 +398,13 @@ jobs:
           --image ${{ env.CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_IMAGE }}:latest
 
     - name: Wait for deployment
+      if: steps.check-azure.outputs.skip_azure == 'false'
       run: |
         echo "Waiting for deployment to complete..."
         sleep 60
 
     - name: Get application URL
+      if: steps.check-azure.outputs.skip_azure == 'false'
       id: get-url
       run: |
         APP_URL=$(az containerapp show \
@@ -336,6 +414,7 @@ jobs:
         echo "app_url=https://$APP_URL" >> $GITHUB_OUTPUT
 
     - name: Health check
+      if: steps.check-azure.outputs.skip_azure == 'false'
       run: |
         URL="${{ steps.get-url.outputs.app_url }}/health"
         echo "Checking health endpoint: $URL"
@@ -353,6 +432,7 @@ jobs:
         exit 1
 
     - name: Run smoke tests
+      if: steps.check-azure.outputs.skip_azure == 'false'
       run: |
         URL="${{ steps.get-url.outputs.app_url }}"
         echo "Running smoke tests against: $URL"
@@ -371,15 +451,28 @@ jobs:
   post-deployment:
     runs-on: ubuntu-latest
     needs: deploy-app
-    if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && !contains(needs.deploy-app.result, 'skipped')
     
     steps:
+    - name: Check Azure Credentials
+      id: check-azure
+      run: |
+        if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+          echo "Azure credentials not configured. Skipping post-deployment."
+          echo "skip_azure=true" >> $GITHUB_OUTPUT
+        else
+          echo "Azure credentials found."
+          echo "skip_azure=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Azure Login
+      if: steps.check-azure.outputs.skip_azure == 'false'
       uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Get deployment status
+      if: steps.check-azure.outputs.skip_azure == 'false'
       id: status
       run: |
         APP_NAME=$(az containerapp list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" -o tsv)
@@ -388,13 +481,13 @@ jobs:
         echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
 
     - name: Get application insights
-      if: success()
+      if: steps.check-azure.outputs.skip_azure == 'false' && success()
       run: |
         AI_NAME=$(az monitor app-insights component list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" -o tsv 2>/dev/null || echo "Not found")
         echo "Application Insights: $AI_NAME"
 
     - name: Clean up old revisions
-      if: success()
+      if: steps.check-azure.outputs.skip_azure == 'false' && success()
       run: |
         echo "Cleaning up old container app revisions..."
         az containerapp revision list \
@@ -408,7 +501,7 @@ jobs:
           --revision {}
 
     - name: Clean up old container images
-      if: success()
+      if: steps.check-azure.outputs.skip_azure == 'false' && success()
       run: |
         echo "Cleaning up old container images (keep last 5)..."
         az acr repository show-tags \
@@ -427,9 +520,9 @@ jobs:
         echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
         echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
         echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Application | ${{ steps.status.outputs.status }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Application | ${{ steps.status.outputs.status || 'N/A (Azure not configured)' }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Environment | ${{ github.event.inputs.environment || 'prod' }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Container App | ${{ steps.status.outputs.app_name }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Container App | ${{ steps.status.outputs.app_name || 'N/A (Azure not configured)' }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Resource Group | ${{ env.AZURE_RESOURCE_GROUP }} |" >> $GITHUB_STEP_SUMMARY
 
   # Notification on failure
@@ -437,6 +530,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-and-test, terraform-apply, deploy-app]
     if: failure() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    permissions:
+      issues: write
+      contents: read
     
     steps:
     - name: Create GitHub issue on failure
@@ -444,28 +540,42 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const title = `Deployment Failed - ${new Date().toISOString()}`;
-          const body = `
-          ## Deployment Failure Report
-          
-          **Workflow**: ${context.workflow}
-          **Run ID**: ${context.runId}
-          **Commit**: ${context.sha}
-          **Branch**: ${context.ref}
-          **Actor**: ${context.actor}
-          
-          **Failed Jobs**:
-          ${{ toJSON(needs) }}
-          
-          Please check the workflow logs for more details.
-          
-          [View Workflow Run](${context.payload.repository.html_url}/actions/runs/${context.runId})
-          `;
-          
-          github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: title,
-            body: body,
-            labels: ['bug', 'deployment-failure', 'urgent']
-          });
+          try {
+            const title = `Deployment Failed - ${new Date().toISOString()}`;
+            const body = `
+            ## Deployment Failure Report
+            
+            **Workflow**: ${context.workflow}
+            **Run ID**: ${context.runId}
+            **Commit**: ${context.sha}
+            **Branch**: ${context.ref}
+            **Actor**: ${context.actor}
+            
+            **Failed Jobs**:
+            ${{ toJSON(needs) }}
+            
+            Please check the workflow logs for more details.
+            
+            [View Workflow Run](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            `;
+            
+            const result = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['bug', 'deployment-failure', 'urgent']
+            });
+            
+            console.log(`Issue created: ${result.data.html_url}`);
+          } catch (error) {
+            console.log(`Failed to create issue: ${error.message}`);
+            console.log('This may be due to insufficient permissions or repository settings.');
+            console.log('Consider checking repository settings > Actions > General > Workflow permissions');
+          }
+
+    - name: Log failure summary
+      run: |
+        echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+        echo "Check the workflow logs for detailed error information." >> $GITHUB_STEP_SUMMARY
+        echo "Failed at: $(date)" >> $GITHUB_STEP_SUMMARY
