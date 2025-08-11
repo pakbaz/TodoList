@@ -45,3 +45,16 @@ resource "azurerm_postgresql_flexible_server_database" "appdb" {
 output "fqdn" { 
   value = azurerm_postgresql_flexible_server.pg.fqdn 
 }
+
+output "connection_string" {
+  value = "Host=${azurerm_postgresql_flexible_server.pg.fqdn};Database=${azurerm_postgresql_flexible_server_database.appdb.name};Username=${var.admin_user};Password=${var.admin_password};Port=5432;SSL Mode=Require;"
+  sensitive = true
+}
+
+output "server_name" {
+  value = azurerm_postgresql_flexible_server.pg.name
+}
+
+output "database_name" {
+  value = azurerm_postgresql_flexible_server_database.appdb.name
+}

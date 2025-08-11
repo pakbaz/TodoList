@@ -1,5 +1,7 @@
 # TodoList Azure Infrastructure (Terraform)
 
+> **🎉 Status Update:** All missing Terraform configuration files have been created and fixed! The infrastructure is now ready to deploy.
+
 This folder contains Terraform IaC for deploying the TodoList Blazor Server (.NET 9) application onto Azure using a containerized architecture aligned with the "Azure Container Apps with managed PostgreSQL" reference pattern (derivable from Azure Architecture Center: serverless container apps + managed database + Key Vault + monitoring).
 
 ## ✅ Architecture Summary
