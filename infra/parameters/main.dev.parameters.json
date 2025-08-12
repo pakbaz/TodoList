@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "dev"
+    },
+    "applicationName": {
+      "value": "todolist"
+    },
+    "location": {
+      "value": "East US 2"
+    },
+    "postgresAdminLogin": {
+      "value": "todolistadmin"
+    },
+    "postgresAdminPassword": {
+      "value": "P@ssw0rd123!"
+    },
+    "logRetentionInDays": {
+      "value": 30
+    },
+    "databaseSkuName": {
+      "value": "Standard_B1ms"
+    },
+    "databaseStorageSizeGB": {
+      "value": 32
+    },
+    "enableDatabaseHA": {
+      "value": false
+    },
+    "enableZoneRedundancy": {
+      "value": false
+    },
+    "minReplicas": {
+      "value": 0
+    },
+    "maxReplicas": {
+      "value": 3
+    }
+  }
+}

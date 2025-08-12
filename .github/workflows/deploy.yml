@@ -1,0 +1,217 @@
+name: Deploy Infrastructure and Application
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+env:
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  LOCATION: 'East US 2'
+
+jobs:
+  # Determine environment and configuration
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      resource-group: ${{ steps.env.outputs.resource-group }}
+      should-deploy: ${{ steps.env.outputs.should-deploy }}
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            ENV="dev"
+          else
+            ENV="none"
+          fi
+          
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "resource-group=rg-todolist-$ENV" >> $GITHUB_OUTPUT
+          echo "should-deploy=$([[ "$ENV" != "none" ]] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+          
+          echo "Environment: $ENV"
+          echo "Resource Group: rg-todolist-$ENV"
+
+  # Validate Bicep templates
+  validate:
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-deploy == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure CLI Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate Bicep templates
+        run: |
+          az bicep build --file infra/main.bicep
+          az deployment group validate \
+            --resource-group ${{ needs.setup.outputs.resource-group }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/main.${{ needs.setup.outputs.environment }}.parameters.json \
+            --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}'
+
+  # Build and test application
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build application
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run tests
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+  # Deploy infrastructure
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    needs: [setup, validate, build-and-test]
+    if: needs.setup.outputs.should-deploy == 'true'
+    environment: 
+      name: ${{ needs.setup.outputs.environment }}
+      url: ${{ steps.deploy.outputs.app-url }}
+    outputs:
+      app-url: ${{ steps.deploy.outputs.app-url }}
+      acr-name: ${{ steps.deploy.outputs.acr-name }}
+      acr-server: ${{ steps.deploy.outputs.acr-server }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure CLI Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name ${{ needs.setup.outputs.resource-group }} \
+            --location "${{ env.LOCATION }}" \
+            --tags environment=${{ needs.setup.outputs.environment }} application=todolist
+
+      - name: Deploy Infrastructure
+        id: deploy
+        run: |
+          DEPLOYMENT_OUTPUT=$(az deployment group create \
+            --resource-group ${{ needs.setup.outputs.resource-group }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/main.${{ needs.setup.outputs.environment }}.parameters.json \
+            --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' \
+            --query 'properties.outputs' \
+            --output json)
+          
+          echo "Deployment output: $DEPLOYMENT_OUTPUT"
+          
+          APP_URL=$(echo $DEPLOYMENT_OUTPUT | jq -r '.containerAppUrl.value')
+          ACR_NAME=$(echo $DEPLOYMENT_OUTPUT | jq -r '.containerRegistryName.value')
+          ACR_SERVER=$(echo $DEPLOYMENT_OUTPUT | jq -r '.containerRegistryServer.value')
+          
+          echo "app-url=$APP_URL" >> $GITHUB_OUTPUT
+          echo "acr-name=$ACR_NAME" >> $GITHUB_OUTPUT
+          echo "acr-server=$ACR_SERVER" >> $GITHUB_OUTPUT
+
+  # Build and push container image
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    needs: [setup, deploy-infrastructure]
+    if: needs.setup.outputs.should-deploy == 'true'
+    outputs:
+      image-tag: ${{ steps.build.outputs.image-tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure CLI Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push container image
+        id: build
+        run: |
+          IMAGE_TAG="todolist-app:${{ github.sha }}"
+          
+          az acr build \
+            --registry ${{ needs.deploy-infrastructure.outputs.acr-name }} \
+            --image $IMAGE_TAG \
+            --file Dockerfile \
+            .
+          
+          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  # Update container app with new image
+  deploy-application:
+    runs-on: ubuntu-latest
+    needs: [setup, deploy-infrastructure, build-and-push-image]
+    if: needs.setup.outputs.should-deploy == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure CLI Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Update Container App
+        run: |
+          FULL_IMAGE_NAME="${{ needs.deploy-infrastructure.outputs.acr-server }}/${{ needs.build-and-push-image.outputs.image-tag }}"
+          
+          # Update the container app with the new image
+          az deployment group create \
+            --resource-group ${{ needs.setup.outputs.resource-group }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/main.${{ needs.setup.outputs.environment }}.parameters.json \
+            --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' \
+            --parameters containerImage="$FULL_IMAGE_NAME"
+
+      - name: Verify deployment
+        run: |
+          APP_URL="${{ needs.deploy-infrastructure.outputs.app-url }}"
+          echo "Application URL: $APP_URL"
+          
+          # Wait for the app to be ready
+          sleep 60
+          
+          # Check health endpoint
+          echo "Checking health endpoint..."
+          curl -f "$APP_URL/health" || exit 1
+          
+          echo "✅ Deployment successful!"
+          echo "🌐 Application URL: $APP_URL"
