@@ -71,22 +71,39 @@ jobs:
 
       - name: Create Resource Group (for validation)
         run: |
-          # Delete existing resource group if it exists in wrong location
-          if az group show --name ${{ needs.setup.outputs.resource-group }} --query location -o tsv 2>/dev/null | grep -v "eastus" > /dev/null; then
-            echo "Resource group exists in wrong location, deleting..."
-            az group delete --name ${{ needs.setup.outputs.resource-group }} --yes --no-wait
-            # Wait for deletion to complete
-            while az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; do
-              echo "Waiting for resource group deletion..."
-              sleep 10
-            done
+          # Check if resource group exists and handle deletion state
+          if az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; then
+            RG_STATE=$(az group show --name ${{ needs.setup.outputs.resource-group }} --query provisioningState -o tsv 2>/dev/null || echo "NotFound")
+            RG_LOCATION=$(az group show --name ${{ needs.setup.outputs.resource-group }} --query location -o tsv 2>/dev/null || echo "Unknown")
+            
+            if [ "$RG_STATE" = "Deleting" ]; then
+              echo "Resource group is currently being deleted, waiting for completion..."
+              while az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; do
+                echo "Waiting for resource group deletion to complete..."
+                sleep 15
+              done
+            elif [ "$RG_LOCATION" != "eastus" ]; then
+              echo "Resource group exists in wrong location ($RG_LOCATION), deleting..."
+              az group delete --name ${{ needs.setup.outputs.resource-group }} --yes --no-wait
+              while az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; do
+                echo "Waiting for resource group deletion..."
+                sleep 15
+              done
+            else
+              echo "Resource group exists in correct location ($RG_LOCATION)"
+            fi
           fi
-          
-          # Create resource group
-          az group create \
-            --name ${{ needs.setup.outputs.resource-group }} \
-            --location "${{ env.LOCATION }}" \
-            --tags environment=${{ needs.setup.outputs.environment }} application=todolist
+
+          # Create resource group if it doesn't exist
+          if ! az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; then
+            echo "Creating resource group..."
+            az group create \
+              --name ${{ needs.setup.outputs.resource-group }} \
+              --location "${{ env.LOCATION }}" \
+              --tags environment=${{ needs.setup.outputs.environment }} application=todolist
+          else
+            echo "Resource group already exists"
+          fi
 
       - name: Validate Bicep templates
         run: |
@@ -152,10 +169,39 @@ jobs:
 
       - name: Create Resource Group
         run: |
-          az group create \
-            --name ${{ needs.setup.outputs.resource-group }} \
-            --location "${{ env.LOCATION }}" \
-            --tags environment=${{ needs.setup.outputs.environment }} application=todolist
+          # Check if resource group exists and handle deletion state
+          if az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; then
+            RG_STATE=$(az group show --name ${{ needs.setup.outputs.resource-group }} --query provisioningState -o tsv 2>/dev/null || echo "NotFound")
+            RG_LOCATION=$(az group show --name ${{ needs.setup.outputs.resource-group }} --query location -o tsv 2>/dev/null || echo "Unknown")
+            
+            if [ "$RG_STATE" = "Deleting" ]; then
+              echo "Resource group is currently being deleted, waiting for completion..."
+              while az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; do
+                echo "Waiting for resource group deletion to complete..."
+                sleep 15
+              done
+            elif [ "$RG_LOCATION" != "eastus" ]; then
+              echo "Resource group exists in wrong location ($RG_LOCATION), deleting..."
+              az group delete --name ${{ needs.setup.outputs.resource-group }} --yes --no-wait
+              while az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; do
+                echo "Waiting for resource group deletion..."
+                sleep 15
+              done
+            else
+              echo "Resource group exists in correct location ($RG_LOCATION)"
+            fi
+          fi
+
+          # Create resource group if it doesn't exist
+          if ! az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; then
+            echo "Creating resource group..."
+            az group create \
+              --name ${{ needs.setup.outputs.resource-group }} \
+              --location "${{ env.LOCATION }}" \
+              --tags environment=${{ needs.setup.outputs.environment }} application=todolist
+          else
+            echo "Resource group already exists"
+          fi
 
       - name: Deploy Infrastructure
         id: deploy
