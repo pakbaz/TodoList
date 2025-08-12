@@ -20,9 +20,6 @@ param keyVaultName string
 @description('Managed Identity resource ID for ACR access')
 param managedIdentityId string
 
-@description('Managed Identity name for ACR access')
-param managedIdentityName string
-
 @description('CPU allocation (number of cores)')
 param cpu int = 250 // 0.25 cores in millicores
 
@@ -42,11 +39,6 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
 
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: containerRegistryName
-}
-
-// Reference the existing managed identity by its name
-resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
-  name: managedIdentityName
 }
 
 // Container App
@@ -169,17 +161,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         ]
       }
     }
-  }
-}
-
-// Grant Key Vault Secret User role to the managed identity
-resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, managedIdentity.id, 'Key Vault Secrets User')
-  scope: keyVault
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
   }
 }
 

@@ -39,6 +39,7 @@ var logAnalyticsName = '${appName}-logs-${environment}'
 var postgresqlServerName = '${appName}-db-${environment}'
 var acaEnvironmentName = '${appName}-env-${environment}'
 var acaAppName = '${appName}-app-${environment}'
+var managedIdentityName = '${acrName}-identity'
 
 // Module: Log Analytics Workspace
 module logAnalytics 'modules/log-analytics.bicep' = {
@@ -48,6 +49,13 @@ module logAnalytics 'modules/log-analytics.bicep' = {
     location: location
     tags: tags
   }
+}
+
+// Create managed identity for Container Registry and Container App access
+resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: managedIdentityName
+  location: location
+  tags: tags
 }
 
 // Module: Azure Key Vault
@@ -94,6 +102,34 @@ module acaEnvironment 'modules/aca-env.bicep' = {
   }
 }
 
+// Assign AcrPull role to managed identity for Container Registry access
+resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(resourceGroup().id, managedIdentity.id, acrName, 'AcrPull')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+  scope: resourceGroup()
+  dependsOn: [
+    containerRegistry
+  ]
+}
+
+// Assign Key Vault Secrets User role to managed identity for Key Vault access
+resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(resourceGroup().id, managedIdentity.id, keyVaultName, 'Key Vault Secrets User')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+  scope: resourceGroup()
+  dependsOn: [
+    keyVault
+  ]
+}
+
 // Module: Container App
 module containerApp 'modules/aca-app.bicep' = {
   name: 'containerApp'
@@ -105,10 +141,13 @@ module containerApp 'modules/aca-app.bicep' = {
     containerRegistryName: containerRegistry.outputs.name
     imageTag: imageTag
     keyVaultName: keyVault.outputs.name
-    managedIdentityId: containerRegistry.outputs.managedIdentityId
-    managedIdentityName: containerRegistry.outputs.managedIdentityName
+    managedIdentityId: managedIdentity.id
     tags: tags
   }
+  dependsOn: [
+    acrPullRoleAssignment
+    keyVaultRoleAssignment
+  ]
 }
 
 // Outputs

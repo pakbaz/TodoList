@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "12135280236893049252"
+      "templateHash": "13457425964982401277"
     }
   },
   "parameters": {
@@ -79,9 +79,45 @@
     "logAnalyticsName": "[format('{0}-logs-{1}', parameters('appName'), parameters('environment'))]",
     "postgresqlServerName": "[format('{0}-db-{1}', parameters('appName'), parameters('environment'))]",
     "acaEnvironmentName": "[format('{0}-env-{1}', parameters('appName'), parameters('environment'))]",
-    "acaAppName": "[format('{0}-app-{1}', parameters('appName'), parameters('environment'))]"
+    "acaAppName": "[format('{0}-app-{1}', parameters('appName'), parameters('environment'))]",
+    "managedIdentityName": "[format('{0}-identity', parameters('acrName'))]"
   },
   "resources": [
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[variables('managedIdentityName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName')), parameters('acrName'), 'AcrPull')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'containerRegistry')]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName')), variables('keyVaultName'), 'Key Vault Secrets User')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'keyVault')]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName'))]"
+      ]
+    },
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
@@ -314,7 +350,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "3119949982413079583"
+              "templateHash": "8234371534964699221"
             }
           },
           "parameters": {
@@ -384,28 +420,6 @@
                 "publicNetworkAccess": "Enabled",
                 "networkRuleBypassOptions": "AzureServices"
               }
-            },
-            {
-              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
-              "apiVersion": "2023-01-31",
-              "name": "[format('{0}-identity', parameters('name'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]"
-            },
-            {
-              "type": "Microsoft.Authorization/roleAssignments",
-              "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('name'))]",
-              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('name'))), 'AcrPull')]",
-              "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
-                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('name'))), '2023-01-31').principalId]",
-                "principalType": "ServicePrincipal"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]",
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('name')))]"
-              ]
             }
           ],
           "outputs": {
@@ -420,22 +434,6 @@
             "loginServer": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2023-07-01').loginServer]"
-            },
-            "managedIdentityId": {
-              "type": "string",
-              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('name')))]"
-            },
-            "managedIdentityName": {
-              "type": "string",
-              "value": "[format('{0}-identity', parameters('name'))]"
-            },
-            "managedIdentityClientId": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('name'))), '2023-01-31').clientId]"
-            },
-            "managedIdentityPrincipalId": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('name'))), '2023-01-31').principalId]"
             }
           }
         }
@@ -838,10 +836,7 @@
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2022-09-01').outputs.name.value]"
           },
           "managedIdentityId": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'containerRegistry'), '2022-09-01').outputs.managedIdentityId.value]"
-          },
-          "managedIdentityName": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'containerRegistry'), '2022-09-01').outputs.managedIdentityName.value]"
+            "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName'))]"
           },
           "tags": {
             "value": "[parameters('tags')]"
@@ -854,7 +849,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "15630472542033122334"
+              "templateHash": "11654519497709542409"
             }
           },
           "parameters": {
@@ -903,12 +898,6 @@
               "type": "string",
               "metadata": {
                 "description": "Managed Identity resource ID for ACR access"
-              }
-            },
-            "managedIdentityName": {
-              "type": "string",
-              "metadata": {
-                "description": "Managed Identity name for ACR access"
               }
             },
             "cpu": {
@@ -1063,17 +1052,6 @@
                   }
                 }
               }
-            },
-            {
-              "type": "Microsoft.Authorization/roleAssignments",
-              "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.KeyVault/vaults/{0}', parameters('keyVaultName'))]",
-              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), 'Key Vault Secrets User')]",
-              "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
-                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31').principalId]",
-                "principalType": "ServicePrincipal"
-              }
             }
           ],
           "outputs": {
@@ -1098,8 +1076,11 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'acaEnvironment')]",
+        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName')), parameters('acrName'), 'AcrPull'))]",
         "[resourceId('Microsoft.Resources/deployments', 'containerRegistry')]",
-        "[resourceId('Microsoft.Resources/deployments', 'keyVault')]"
+        "[resourceId('Microsoft.Resources/deployments', 'keyVault')]",
+        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName')), variables('keyVaultName'), 'Key Vault Secrets User'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName'))]"
       ]
     }
   ],
