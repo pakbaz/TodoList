@@ -102,33 +102,34 @@ module acaEnvironment 'modules/aca-env.bicep' = {
   }
 }
 
-// Assign AcrPull role to managed identity for Container Registry access
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(resourceGroup().id, managedIdentity.id, acrName, 'AcrPull')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
-  scope: resourceGroup()
-  dependsOn: [
-    containerRegistry
-  ]
-}
+// Temporarily comment out role assignments to isolate the issue
+// // Assign AcrPull role to managed identity for Container Registry access
+// resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(resourceGroup().id, managedIdentity.id, acrName, 'AcrPull')
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
+//     principalId: managedIdentity.properties.principalId
+//     principalType: 'ServicePrincipal'
+//   }
+//   scope: resourceGroup()
+//   dependsOn: [
+//     containerRegistry
+//   ]
+// }
 
-// Assign Key Vault Secrets User role to managed identity for Key Vault access
-resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(resourceGroup().id, managedIdentity.id, keyVaultName, 'Key Vault Secrets User')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
-  scope: resourceGroup()
-  dependsOn: [
-    keyVault
-  ]
-}
+// // Assign Key Vault Secrets User role to managed identity for Key Vault access
+// resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(resourceGroup().id, managedIdentity.id, keyVaultName, 'Key Vault Secrets User')
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+//     principalId: managedIdentity.properties.principalId
+//     principalType: 'ServicePrincipal'
+//   }
+//   scope: resourceGroup()
+//   dependsOn: [
+//     keyVault
+//   ]
+// }
 
 // Module: Container App
 module containerApp 'modules/aca-app.bicep' = {
@@ -144,10 +145,11 @@ module containerApp 'modules/aca-app.bicep' = {
     managedIdentityId: managedIdentity.id
     tags: tags
   }
-  dependsOn: [
-    acrPullRoleAssignment
-    keyVaultRoleAssignment
-  ]
+  // Temporarily remove dependencies to isolate the issue
+  // dependsOn: [
+  //   acrPullRoleAssignment
+  //   keyVaultRoleAssignment
+  // ]
 }
 
 // Outputs

@@ -33,9 +33,10 @@ param minReplicas int = 1
 param maxReplicas int = 5
 
 // Get existing resources
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
-  name: keyVaultName
-}
+// Temporarily comment out Key Vault to isolate the issue
+// resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
+//   name: keyVaultName
+// }
 
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: containerRegistryName
@@ -73,13 +74,14 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           identity: managedIdentityId
         }
       ]
-      secrets: [
-        {
-          name: 'postgresql-connection-string'
-          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/postgresql-connection-string'
-          identity: managedIdentityId
-        }
-      ]
+      // Temporarily comment out secrets to isolate the issue
+      // secrets: [
+      //   {
+      //     name: 'postgresql-connection-string'
+      //     keyVaultUrl: '${keyVault.properties.vaultUri}secrets/postgresql-connection-string'
+      //     identity: managedIdentityId
+      //   }
+      // ]
     }
     template: {
       containers: [
@@ -95,10 +97,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'ASPNETCORE_URLS'
               value: 'http://+:8080'
             }
-            {
-              name: 'ConnectionStrings__DefaultConnection'
-              secretRef: 'postgresql-connection-string'
-            }
+            // {
+            //   name: 'ConnectionStrings__DefaultConnection'
+            //   secretRef: 'postgresql-connection-string'
+            // }
             {
               name: 'ApplicationInsights__ConnectionString'
               value: '' // Will be set up later if needed
