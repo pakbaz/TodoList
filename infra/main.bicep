@@ -79,7 +79,7 @@ module appInsights 'modules/app-insights.bicep' = {
 module keyVault 'modules/key-vault.bicep' = {
   name: 'key-vault-deployment'
   params: {
-    keyVaultName: '${resourcePrefix}-kv-${uniqueString(resourceGroup().id)}'
+    keyVaultName: 'kv${environment}${take(uniqueString(resourceGroup().id), 8)}'
     location: location
     tags: tags
   }
