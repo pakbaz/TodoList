@@ -69,6 +69,13 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Create Resource Group (for validation)
+        run: |
+          az group create \
+            --name ${{ needs.setup.outputs.resource-group }} \
+            --location "${{ env.LOCATION }}" \
+            --tags environment=${{ needs.setup.outputs.environment }} application=todolist || true
+
       - name: Validate Bicep templates
         run: |
           az bicep build --file infra/main.bicep
