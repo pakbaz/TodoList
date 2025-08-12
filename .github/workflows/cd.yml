@@ -1,0 +1,192 @@
+name: CD - Deploy to Azure
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      image_tag:
+        description: 'Container image tag to deploy (optional)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AZURE_RESOURCE_GROUP_DEV: 'todolist-rg-dev'
+  AZURE_RESOURCE_GROUP_STAGING: 'todolist-rg-staging'
+  AZURE_RESOURCE_GROUP_PROD: 'todolist-rg-prod'
+
+jobs:
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
+    environment: 
+      name: development
+      url: ${{ steps.deploy.outputs.application-url }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        
+    - name: Get latest image tag
+      id: get-tag
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ inputs.image_tag }}" ]; then
+          echo "image-tag=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
+        else
+          echo "image-tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Deploy Infrastructure
+      id: deploy
+      uses: azure/arm-deploy@v2
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        resourceGroupName: ${{ env.AZURE_RESOURCE_GROUP_DEV }}
+        template: ./infra/main.bicep
+        parameters: >
+          appName=todolist
+          environment=dev
+          location="${{ vars.AZURE_LOCATION || 'East US' }}"
+          imageTag=${{ steps.get-tag.outputs.image-tag }}
+          acrName=${{ vars.ACR_NAME }}
+          postgresqlAdminLogin=${{ vars.POSTGRESQL_ADMIN_LOGIN }}
+          postgresqlAdminPassword=${{ secrets.POSTGRESQL_ADMIN_PASSWORD }}
+        failOnStdErr: false
+        
+    - name: Verify Deployment
+      run: |
+        echo "Application URL: ${{ steps.deploy.outputs.application-url }}"
+        echo "Waiting for application to be ready..."
+        sleep 30
+        
+        # Health check with retry
+        max_attempts=10
+        attempt=1
+        while [ $attempt -le $max_attempts ]; do
+          echo "Health check attempt $attempt/$max_attempts"
+          if curl -f -s "${{ steps.deploy.outputs.application-url }}/health" > /dev/null; then
+            echo "✅ Application is healthy!"
+            break
+          elif [ $attempt -eq $max_attempts ]; then
+            echo "❌ Application health check failed after $max_attempts attempts"
+            exit 1
+          else
+            echo "⏳ Waiting 30 seconds before retry..."
+            sleep 30
+            attempt=$((attempt + 1))
+          fi
+        done
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'staging'
+    environment: 
+      name: staging
+      url: ${{ steps.deploy.outputs.application-url }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        
+    - name: Deploy Infrastructure
+      id: deploy
+      uses: azure/arm-deploy@v2
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        resourceGroupName: ${{ env.AZURE_RESOURCE_GROUP_STAGING }}
+        template: ./infra/main.bicep
+        parameters: >
+          appName=todolist
+          environment=staging
+          location="${{ vars.AZURE_LOCATION || 'East US' }}"
+          imageTag=${{ inputs.image_tag || github.sha }}
+          acrName=${{ vars.ACR_NAME_STAGING }}
+          postgresqlAdminLogin=${{ vars.POSTGRESQL_ADMIN_LOGIN }}
+          postgresqlAdminPassword=${{ secrets.POSTGRESQL_ADMIN_PASSWORD_STAGING }}
+        failOnStdErr: false
+        
+    - name: Verify Deployment
+      run: |
+        echo "Application URL: ${{ steps.deploy.outputs.application-url }}"
+        curl -f "${{ steps.deploy.outputs.application-url }}/health" || exit 1
+
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
+    environment: 
+      name: production
+      url: ${{ steps.deploy.outputs.application-url }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        
+    - name: Deploy Infrastructure
+      id: deploy
+      uses: azure/arm-deploy@v2
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        resourceGroupName: ${{ env.AZURE_RESOURCE_GROUP_PROD }}
+        template: ./infra/main.bicep
+        parameters: >
+          appName=todolist
+          environment=prod
+          location="${{ vars.AZURE_LOCATION || 'East US' }}"
+          imageTag=${{ inputs.image_tag || github.sha }}
+          acrName=${{ vars.ACR_NAME_PROD }}
+          postgresqlAdminLogin=${{ vars.POSTGRESQL_ADMIN_LOGIN }}
+          postgresqlAdminPassword=${{ secrets.POSTGRESQL_ADMIN_PASSWORD_PROD }}
+        failOnStdErr: false
+        
+    - name: Verify Deployment
+      run: |
+        echo "Application URL: ${{ steps.deploy.outputs.application-url }}"
+        curl -f "${{ steps.deploy.outputs.application-url }}/health" || exit 1
+        
+    - name: Run Smoke Tests
+      run: |
+        echo "Running production smoke tests..."
+        # Add more comprehensive tests for production
+        curl -f "${{ steps.deploy.outputs.application-url }}/mcp/todos" || exit 1
+        echo "✅ Production deployment verified successfully!"
