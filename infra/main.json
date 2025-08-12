@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "14425611440024734368"
+      "templateHash": "12135280236893049252"
     }
   },
   "parameters": {
@@ -314,7 +314,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "10569444272507000045"
+              "templateHash": "3119949982413079583"
             }
           },
           "parameters": {
@@ -424,6 +424,10 @@
             "managedIdentityId": {
               "type": "string",
               "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('name')))]"
+            },
+            "managedIdentityName": {
+              "type": "string",
+              "value": "[format('{0}-identity', parameters('name'))]"
             },
             "managedIdentityClientId": {
               "type": "string",
@@ -833,11 +837,11 @@
           "keyVaultName": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2022-09-01').outputs.name.value]"
           },
-          "postgresqlServerName": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgresql'), '2022-09-01').outputs.serverName.value]"
-          },
           "managedIdentityId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'containerRegistry'), '2022-09-01').outputs.managedIdentityId.value]"
+          },
+          "managedIdentityName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'containerRegistry'), '2022-09-01').outputs.managedIdentityName.value]"
           },
           "tags": {
             "value": "[parameters('tags')]"
@@ -850,7 +854,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "334716642492258816"
+              "templateHash": "15630472542033122334"
             }
           },
           "parameters": {
@@ -895,16 +899,16 @@
                 "description": "Key Vault name for secrets"
               }
             },
-            "postgresqlServerName": {
-              "type": "string",
-              "metadata": {
-                "description": "PostgreSQL server name"
-              }
-            },
             "managedIdentityId": {
               "type": "string",
               "metadata": {
                 "description": "Managed Identity resource ID for ACR access"
+              }
+            },
+            "managedIdentityName": {
+              "type": "string",
+              "metadata": {
+                "description": "Managed Identity name for ACR access"
               }
             },
             "cpu": {
@@ -1064,10 +1068,10 @@
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
               "scope": "[format('Microsoft.KeyVault/vaults/{0}', parameters('keyVaultName'))]",
-              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('containerRegistryName'))), 'Key Vault Secrets User')]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), 'Key Vault Secrets User')]",
               "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
-                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('containerRegistryName'))), '2023-01-31').principalId]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31').principalId]",
                 "principalType": "ServicePrincipal"
               }
             }
@@ -1095,8 +1099,7 @@
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'acaEnvironment')]",
         "[resourceId('Microsoft.Resources/deployments', 'containerRegistry')]",
-        "[resourceId('Microsoft.Resources/deployments', 'keyVault')]",
-        "[resourceId('Microsoft.Resources/deployments', 'postgresql')]"
+        "[resourceId('Microsoft.Resources/deployments', 'keyVault')]"
       ]
     }
   ],

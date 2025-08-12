@@ -106,6 +106,7 @@ module containerApp 'modules/aca-app.bicep' = {
     imageTag: imageTag
     keyVaultName: keyVault.outputs.name
     managedIdentityId: containerRegistry.outputs.managedIdentityId
+    managedIdentityName: containerRegistry.outputs.managedIdentityName
     tags: tags
   }
 }

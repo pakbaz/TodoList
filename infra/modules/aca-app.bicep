@@ -20,6 +20,9 @@ param keyVaultName string
 @description('Managed Identity resource ID for ACR access')
 param managedIdentityId string
 
+@description('Managed Identity name for ACR access')
+param managedIdentityName string
+
 @description('CPU allocation (number of cores)')
 param cpu int = 250 // 0.25 cores in millicores
 
@@ -41,10 +44,9 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' e
   name: containerRegistryName
 }
 
-// Reference the existing managed identity by its resource ID
+// Reference the existing managed identity by its name
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
-  name: last(split(managedIdentityId, '/'))
-  scope: resourceGroup()
+  name: managedIdentityName
 }
 
 // Container App

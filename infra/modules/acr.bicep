@@ -65,5 +65,6 @@ output id string = containerRegistry.id
 output name string = containerRegistry.name
 output loginServer string = containerRegistry.properties.loginServer
 output managedIdentityId string = managedIdentity.id
+output managedIdentityName string = managedIdentity.name
 output managedIdentityClientId string = managedIdentity.properties.clientId
 output managedIdentityPrincipalId string = managedIdentity.properties.principalId
