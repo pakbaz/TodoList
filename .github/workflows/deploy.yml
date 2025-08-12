@@ -202,10 +202,11 @@ jobs:
             echo "Resource group already exists"
           fi
 
-      - name: Deploy Infrastructure
-        id: deploy
+      - name: Validate Bicep Template
         run: |
-          DEPLOYMENT_OUTPUT=$(az deployment group create \
+          echo "Validating Bicep template..."
+          az bicep install
+          az deployment group validate \
             --resource-group ${{ needs.setup.outputs.resource-group }} \
             --template-file infra/main.bicep \
             --parameters environment="${{ needs.setup.outputs.environment }}" \
@@ -220,6 +221,32 @@ jobs:
             --parameters minReplicas=0 \
             --parameters maxReplicas=10 \
             --parameters enableZoneRedundancy=false \
+            --verbose
+
+      - name: Deploy Infrastructure
+        id: deploy
+        run: |
+          # Create unique deployment name
+          DEPLOYMENT_NAME="todolist-${{ needs.setup.outputs.environment }}-$(date +%Y%m%d-%H%M%S)"
+          echo "Deploying with name: $DEPLOYMENT_NAME"
+          
+          DEPLOYMENT_OUTPUT=$(az deployment group create \
+            --resource-group ${{ needs.setup.outputs.resource-group }} \
+            --template-file infra/main.bicep \
+            --name "$DEPLOYMENT_NAME" \
+            --parameters environment="${{ needs.setup.outputs.environment }}" \
+            --parameters applicationName="todolist" \
+            --parameters location="${{ env.LOCATION }}" \
+            --parameters postgresAdminLogin="todolistadmin" \
+            --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' \
+            --parameters logRetentionInDays=30 \
+            --parameters databaseSkuName="Standard_B1ms" \
+            --parameters databaseStorageSizeGB=32 \
+            --parameters enableDatabaseHA=false \
+            --parameters minReplicas=0 \
+            --parameters maxReplicas=10 \
+            --parameters enableZoneRedundancy=false \
+            --verbose \
             --query 'properties.outputs' \
             --output json)
           
