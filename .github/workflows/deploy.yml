@@ -231,31 +231,31 @@ jobs:
           echo "Deploying with name: $DEPLOYMENT_NAME"
           
           # Deploy infrastructure without querying outputs immediately
-          az deployment group create 
-            --resource-group rg-todolist-dev 
-            --template-file infra/main.bicep 
-            --name "$DEPLOYMENT_NAME" 
-            --parameters environment="dev" 
-            --parameters applicationName="todolist" 
-            --parameters location="East US" 
-            --parameters postgresAdminLogin="todolistadmin" 
-            --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' 
-            --parameters logRetentionInDays=30 
-            --parameters databaseSkuName="Standard_B1ms" 
-            --parameters databaseStorageSizeGB=32 
-            --parameters enableDatabaseHA=false 
-            --parameters minReplicas=0 
-            --parameters maxReplicas=10 
-            --parameters enableZoneRedundancy=false 
+          az deployment group create \
+            --resource-group rg-todolist-dev \
+            --template-file infra/main.bicep \
+            --name "$DEPLOYMENT_NAME" \
+            --parameters environment=dev \
+            --parameters applicationName=todolist \
+            --parameters location="East US" \
+            --parameters postgresAdminLogin=todolistadmin \
+            --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' \
+            --parameters logRetentionInDays=30 \
+            --parameters databaseSkuName=Standard_B1ms \
+            --parameters databaseStorageSizeGB=32 \
+            --parameters enableDatabaseHA=false \
+            --parameters minReplicas=0 \
+            --parameters maxReplicas=10 \
+            --parameters enableZoneRedundancy=false \
             --verbose
           
           echo "Deployment completed, retrieving outputs..."
           
           # Get outputs after deployment completes
-          DEPLOYMENT_OUTPUT=$(az deployment group show 
-            --resource-group rg-todolist-dev 
-            --name "$DEPLOYMENT_NAME" 
-            --query 'properties.outputs' 
+          DEPLOYMENT_OUTPUT=$(az deployment group show \
+            --resource-group rg-todolist-dev \
+            --name "$DEPLOYMENT_NAME" \
+            --query 'properties.outputs' \
             --output json)
           
           echo "Deployment output: $DEPLOYMENT_OUTPUT"
