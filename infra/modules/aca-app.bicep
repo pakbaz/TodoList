@@ -14,9 +14,6 @@ param containerRegistryName string
 @description('Container image tag to deploy')
 param imageTag string
 
-@description('Key Vault name for secrets')
-param keyVaultName string
-
 @description('Managed Identity resource ID for ACR access')
 param managedIdentityId string
 

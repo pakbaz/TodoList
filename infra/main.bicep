@@ -141,7 +141,6 @@ module containerApp 'modules/aca-app.bicep' = {
     containerAppsEnvironmentId: acaEnvironment.outputs.id
     containerRegistryName: containerRegistry.outputs.name
     imageTag: imageTag
-    keyVaultName: keyVault.outputs.name
     managedIdentityId: managedIdentity.id
     tags: tags
   }
