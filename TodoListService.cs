@@ -9,17 +9,17 @@ namespace TodoList.Services;
 /// </summary>
 public class TodoListService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly TodoDbContext _context;
     private readonly ILogger<TodoListService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the TodoListService.
     /// </summary>
-    /// <param name="scopeFactory">Service scope factory for creating scoped database contexts.</param>
+    /// <param name="context">Database context (scoped).</param>
     /// <param name="logger">Logger for tracking operations and errors.</param>
-    public TodoListService(IServiceScopeFactory scopeFactory, ILogger<TodoListService> logger)
+    public TodoListService(TodoDbContext context, ILogger<TodoListService> logger)
     {
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _context = context ?? throw new ArgumentNullException(nameof(context));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -32,10 +32,7 @@ public class TodoListService
     {
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
-            
-            var todos = await context.TodoItems
+            var todos = await _context.TodoItems
                 .OrderBy(t => t.CreatedAt)
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
@@ -69,11 +66,8 @@ public class TodoListService
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
-
             // Check if item with same title already exists
-            var existingItem = await context.TodoItems
+            var existingItem = await _context.TodoItems
                 .FirstOrDefaultAsync(t => t.Title == item.Title, cancellationToken);
                 
             if (existingItem != null)
@@ -85,8 +79,8 @@ public class TodoListService
             // Set creation timestamp
             item.CreatedAt = DateTime.UtcNow;
             
-            var entry = await context.TodoItems.AddAsync(item, cancellationToken);
-            await context.SaveChangesAsync(cancellationToken);
+            var entry = await _context.TodoItems.AddAsync(item, cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Added new todo item: {Title}", item.Title);
             return entry.Entity;
@@ -114,10 +108,7 @@ public class TodoListService
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
-
-            var itemsToRemove = await context.TodoItems
+            var itemsToRemove = await _context.TodoItems
                 .Where(t => t.Title == title)
                 .ToListAsync(cancellationToken);
 
@@ -127,8 +118,8 @@ public class TodoListService
                 return 0;
             }
 
-            context.TodoItems.RemoveRange(itemsToRemove);
-            await context.SaveChangesAsync(cancellationToken);
+            _context.TodoItems.RemoveRange(itemsToRemove);
+            await _context.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Removed {Count} todo item(s) with title '{Title}'", itemsToRemove.Count, title);
             return itemsToRemove.Count;
@@ -157,10 +148,7 @@ public class TodoListService
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
-
-            var itemsToUpdate = await context.TodoItems
+            var itemsToUpdate = await _context.TodoItems
                 .Where(t => t.Title == title)
                 .ToListAsync(cancellationToken);
 
@@ -176,7 +164,7 @@ public class TodoListService
                 item.Touch(); // Update the UpdatedAt timestamp
             }
 
-            await context.SaveChangesAsync(cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Updated {Count} todo item(s) with title '{Title}' to {Status}", 
                 itemsToUpdate.Count, title, isDone ? "completed" : "incomplete");
@@ -198,10 +186,7 @@ public class TodoListService
     {
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
-            
-            var count = await context.TodoItems.CountAsync(cancellationToken);
+            var count = await _context.TodoItems.CountAsync(cancellationToken);
             _logger.LogDebug("Total todo items count: {Count}", count);
             return count;
         }
@@ -221,10 +206,7 @@ public class TodoListService
     {
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
-            
-            var count = await context.TodoItems.CountAsync(t => t.IsDone, cancellationToken);
+            var count = await _context.TodoItems.CountAsync(t => t.IsDone, cancellationToken);
             _logger.LogDebug("Completed todo items count: {Count}", count);
             return count;
         }
@@ -254,10 +236,7 @@ public class TodoListService
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
-
-            var existingItem = await context.TodoItems
+            var existingItem = await _context.TodoItems
                 .FirstOrDefaultAsync(t => t.Id == item.Id, cancellationToken);
 
             if (existingItem == null)
@@ -270,7 +249,7 @@ public class TodoListService
             existingItem.IsDone = item.IsDone;
             existingItem.Touch();
 
-            await context.SaveChangesAsync(cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Updated todo item with ID {Id}: {Title}", item.Id, item.Title);
             return existingItem;

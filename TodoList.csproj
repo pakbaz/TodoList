@@ -16,4 +16,10 @@
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.22.0" />
   </ItemGroup>
 
+  <!-- Prevent accidental inclusion of test sources in main app build -->
+  <ItemGroup>
+    <Compile Remove="Tests/**/*.cs" />
+    <None Include="Tests/**/*" Exclude="Tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>
