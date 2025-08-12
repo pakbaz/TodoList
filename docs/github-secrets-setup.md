@@ -63,16 +63,42 @@ az ad app federated-credential create \
   --id $CLIENT_ID \
   --parameters '{
     "name": "TodoList-GitHub-PR",
-    "issuer": "https://token.actions.githubusercontent.com", 
+    "issuer": "https://token.actions.githubusercontent.com",
     "subject": "repo:pakbaz/TodoList:pull_request",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+# Create OIDC federated credentials for GitHub environments
+az ad app federated-credential create \
+  --id $CLIENT_ID \
+  --parameters '{
+    "name": "TodoList-GitHub-Environment-Dev",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:pakbaz/TodoList:environment:dev",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+az ad app federated-credential create \
+  --id $CLIENT_ID \
+  --parameters '{
+    "name": "TodoList-GitHub-Environment-Staging",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:pakbaz/TodoList:environment:staging",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+az ad app federated-credential create \
+  --id $CLIENT_ID \
+  --parameters '{
+    "name": "TodoList-GitHub-Environment-Prod",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:pakbaz/TodoList:environment:prod",
     "audiences": ["api://AzureADTokenExchange"]
   }'
 
 # Verify the federated credentials were created
 az ad app federated-credential list --id $CLIENT_ID --query '[].{Name:name, Subject:subject}' --output table
-```
-
-### Step 3: Add GitHub Secrets
+```### Step 3: Add GitHub Secrets
 
 Navigate to: https://github.com/pakbaz/TodoList/settings/secrets/actions
 
