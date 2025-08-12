@@ -118,11 +118,10 @@ jobs:
             --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' \
             --parameters logRetentionInDays=30 \
             --parameters databaseSkuName="Standard_B1ms" \
-            --parameters databaseTier="Burstable" \
-            --parameters databaseStorage=32768 \
-            --parameters enableHighAvailability=false \
-            --parameters containerAppMinReplicas=0 \
-            --parameters containerAppMaxReplicas=10 \
+            --parameters databaseStorageSizeGB=32 \
+            --parameters enableDatabaseHA=false \
+            --parameters minReplicas=0 \
+            --parameters maxReplicas=10 \
             --parameters enableZoneRedundancy=false
 
   # Build and test application
@@ -216,11 +215,10 @@ jobs:
             --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' \
             --parameters logRetentionInDays=30 \
             --parameters databaseSkuName="Standard_B1ms" \
-            --parameters databaseTier="Burstable" \
-            --parameters databaseStorage=32768 \
-            --parameters enableHighAvailability=false \
-            --parameters containerAppMinReplicas=0 \
-            --parameters containerAppMaxReplicas=10 \
+            --parameters databaseStorageSizeGB=32 \
+            --parameters enableDatabaseHA=false \
+            --parameters minReplicas=0 \
+            --parameters maxReplicas=10 \
             --parameters enableZoneRedundancy=false \
             --query 'properties.outputs' \
             --output json)
