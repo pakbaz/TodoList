@@ -48,7 +48,7 @@ The output will look like:
 # Replace YOUR_CLIENT_ID with the clientId from step 1
 export CLIENT_ID="12345678-1234-1234-1234-123456789012"
 
-# Create OIDC federated credential
+# Create OIDC federated credential for main branch
 az ad app federated-credential create \
   --id $CLIENT_ID \
   --parameters '{
@@ -57,6 +57,19 @@ az ad app federated-credential create \
     "subject": "repo:pakbaz/TodoList:ref:refs/heads/main",
     "audiences": ["api://AzureADTokenExchange"]
   }'
+
+# Create OIDC federated credential for pull requests  
+az ad app federated-credential create \
+  --id $CLIENT_ID \
+  --parameters '{
+    "name": "TodoList-GitHub-PR",
+    "issuer": "https://token.actions.githubusercontent.com", 
+    "subject": "repo:pakbaz/TodoList:pull_request",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+# Verify the federated credentials were created
+az ad app federated-credential list --id $CLIENT_ID --query '[].{Name:name, Subject:subject}' --output table
 ```
 
 ### Step 3: Add GitHub Secrets
@@ -161,7 +174,11 @@ CLIENT_ID=$(echo $SP_OUTPUT | jq -r '.clientId')
 TENANT_ID=$(echo $SP_OUTPUT | jq -r '.tenantId')
 SUBSCRIPTION_ID=$(echo $SP_OUTPUT | jq -r '.subscriptionId')
 
-# 2. Configure OIDC
+echo "Client ID: $CLIENT_ID"
+echo "Tenant ID: $TENANT_ID" 
+echo "Subscription ID: $SUBSCRIPTION_ID"
+
+# 2. Configure OIDC Federation (CRITICAL - this was missing!)
 az ad app federated-credential create --id $CLIENT_ID --parameters '{
   "name": "TodoList-GitHub-Main",
   "issuer": "https://token.actions.githubusercontent.com", 
@@ -169,15 +186,54 @@ az ad app federated-credential create --id $CLIENT_ID --parameters '{
   "audiences": ["api://AzureADTokenExchange"]
 }'
 
-# 3. Set GitHub secrets (requires gh CLI)
+az ad app federated-credential create --id $CLIENT_ID --parameters '{
+  "name": "TodoList-GitHub-PR", 
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:pakbaz/TodoList:pull_request", 
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+# 3. Verify OIDC credentials were created
+echo "Verifying OIDC federated credentials:"
+az ad app federated-credential list --id $CLIENT_ID --query '[].{Name:name, Subject:subject}' --output table
+
+# 4. Set GitHub secrets (requires gh CLI)
 gh secret set AZURE_CLIENT_ID --body "$CLIENT_ID" --repo pakbaz/TodoList
 gh secret set AZURE_TENANT_ID --body "$TENANT_ID" --repo pakbaz/TodoList  
 gh secret set AZURE_SUBSCRIPTION_ID --body "$SUBSCRIPTION_ID" --repo pakbaz/TodoList
 gh secret set POSTGRES_ADMIN_PASSWORD --body "SecureP@ssw0rd123!" --repo pakbaz/TodoList
 
-# 4. Trigger deployment
-echo "# Secrets configured - ready for deployment" >> README.md
-git add README.md && git commit -m "feat: configure Azure authentication secrets" && git push
+# 5. Trigger deployment
+echo "# OIDC configured - ready for deployment $(date)" >> README.md
+git add README.md && git commit -m "feat: configure OIDC federation for Azure authentication" && git push
+```
+
+## 🆘 **URGENT FIX NEEDED**
+
+The error you're seeing indicates that **OIDC federated credentials are NOT configured**. You need to run these commands immediately:
+
+```bash
+# Get your existing Service Principal Client ID
+# Replace with the actual CLIENT_ID from your GitHub secrets
+CLIENT_ID="YOUR_ACTUAL_CLIENT_ID_HERE"
+
+# Create the missing OIDC federated credentials
+az ad app federated-credential create --id $CLIENT_ID --parameters '{
+  "name": "TodoList-GitHub-Main",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:pakbaz/TodoList:ref:refs/heads/main", 
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+az ad app federated-credential create --id $CLIENT_ID --parameters '{
+  "name": "TodoList-GitHub-PR",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:pakbaz/TodoList:pull_request",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+# Verify they were created
+az ad app federated-credential list --id $CLIENT_ID
 ```
 
 ## ✅ Success Indicators
