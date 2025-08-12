@@ -14,9 +14,6 @@
     "postgresAdminLogin": {
       "value": "todolistadmin"
     },
-    "postgresAdminPassword": {
-      "value": "P@ssw0rd123!"
-    },
     "logRetentionInDays": {
       "value": 90
     },
