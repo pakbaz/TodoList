@@ -57,16 +57,21 @@ jobs:
         run: |
           az bicep install --yes
           bicep build infra/main.bicep
+      - name: Ensure Resource Group
+        run: |
+          az group create --name todolist-${{ steps.vars.outputs.env }}-rg --location '${{ env.AZURE_REGION || 'eastus' }}'
       - name: What-If
         run: |
           az deployment group what-if \
             --resource-group todolist-${{ steps.vars.outputs.env }}-rg \
+            --name main \
             --template-file infra/main.bicep \
             --parameters env=${{ steps.vars.outputs.env }} imageTag=${{ steps.vars.outputs.imageTag }} imageRepo=${{ steps.vars.outputs.imageRepo }}
       - name: Deploy
         run: |
           az deployment group create \
             --resource-group todolist-${{ steps.vars.outputs.env }}-rg \
+            --name main \
             --template-file infra/main.bicep \
             --parameters env=${{ steps.vars.outputs.env }} imageTag=${{ steps.vars.outputs.imageTag }} imageRepo=${{ steps.vars.outputs.imageRepo }}
       - name: Get WebApp Name
