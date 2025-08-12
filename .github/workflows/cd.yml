@@ -71,9 +71,9 @@ jobs:
           environment=dev
           location="${{ vars.AZURE_LOCATION || 'East US' }}"
           imageTag=${{ steps.get-tag.outputs.image-tag }}
-          acrName=${{ vars.ACR_NAME }}
-          postgresqlAdminLogin=${{ vars.POSTGRESQL_ADMIN_LOGIN }}
-          postgresqlAdminPassword=${{ secrets.POSTGRESQL_ADMIN_PASSWORD }}
+          acrName=${{ vars.ACR_NAME || 'todolistacrdev' }}
+          postgresqlAdminLogin=${{ vars.POSTGRESQL_ADMIN_LOGIN || 'todolistadmin' }}
+          postgresqlAdminPassword=${{ secrets.POSTGRESQL_ADMIN_PASSWORD || 'TempPassword123!' }}
         failOnStdErr: false
         
     - name: Verify Deployment
@@ -132,9 +132,9 @@ jobs:
           environment=staging
           location="${{ vars.AZURE_LOCATION || 'East US' }}"
           imageTag=${{ inputs.image_tag || github.sha }}
-          acrName=${{ vars.ACR_NAME_STAGING }}
-          postgresqlAdminLogin=${{ vars.POSTGRESQL_ADMIN_LOGIN }}
-          postgresqlAdminPassword=${{ secrets.POSTGRESQL_ADMIN_PASSWORD_STAGING }}
+          acrName=${{ vars.ACR_NAME_STAGING || 'todolistacrstaging' }}
+          postgresqlAdminLogin=${{ vars.POSTGRESQL_ADMIN_LOGIN || 'todolistadmin' }}
+          postgresqlAdminPassword=${{ secrets.POSTGRESQL_ADMIN_PASSWORD_STAGING || 'TempPassword123!' }}
         failOnStdErr: false
         
     - name: Verify Deployment
@@ -174,9 +174,9 @@ jobs:
           environment=prod
           location="${{ vars.AZURE_LOCATION || 'East US' }}"
           imageTag=${{ inputs.image_tag || github.sha }}
-          acrName=${{ vars.ACR_NAME_PROD }}
-          postgresqlAdminLogin=${{ vars.POSTGRESQL_ADMIN_LOGIN }}
-          postgresqlAdminPassword=${{ secrets.POSTGRESQL_ADMIN_PASSWORD_PROD }}
+          acrName=${{ vars.ACR_NAME_PROD || 'todolistacrprod' }}
+          postgresqlAdminLogin=${{ vars.POSTGRESQL_ADMIN_LOGIN || 'todolistadmin' }}
+          postgresqlAdminPassword=${{ secrets.POSTGRESQL_ADMIN_PASSWORD_PROD || 'TempPassword123!' }}
         failOnStdErr: false
         
     - name: Verify Deployment

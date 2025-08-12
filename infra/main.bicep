@@ -105,7 +105,6 @@ module containerApp 'modules/aca-app.bicep' = {
     containerRegistryName: containerRegistry.outputs.name
     imageTag: imageTag
     keyVaultName: keyVault.outputs.name
-    postgresqlServerName: postgresql.outputs.serverName
     managedIdentityId: containerRegistry.outputs.managedIdentityId
     tags: tags
   }

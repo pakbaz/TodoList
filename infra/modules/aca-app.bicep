@@ -17,9 +17,6 @@ param imageTag string
 @description('Key Vault name for secrets')
 param keyVaultName string
 
-@description('PostgreSQL server name')
-param postgresqlServerName string
-
 @description('Managed Identity resource ID for ACR access')
 param managedIdentityId string
 
