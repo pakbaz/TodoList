@@ -41,8 +41,10 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' e
   name: containerRegistryName
 }
 
+// Reference the existing managed identity by its resource ID
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
-  name: '${containerRegistryName}-identity'
+  name: last(split(managedIdentityId, '/'))
+  scope: resourceGroup()
 }
 
 // Container App
