@@ -249,7 +249,10 @@ jobs:
             --parameters enableZoneRedundancy=false \
             --verbose
           
-          echo "Deployment completed, retrieving outputs..."
+          echo "Deployment completed, waiting for Azure to register deployment..."
+          
+          # Wait a moment for Azure to register the deployment
+          sleep 5
           
           # Get outputs after deployment completes
           DEPLOYMENT_OUTPUT=$(az deployment group show \
