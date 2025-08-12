@@ -71,10 +71,22 @@ jobs:
 
       - name: Create Resource Group (for validation)
         run: |
+          # Delete existing resource group if it exists in wrong location
+          if az group show --name ${{ needs.setup.outputs.resource-group }} --query location -o tsv 2>/dev/null | grep -v "eastus" > /dev/null; then
+            echo "Resource group exists in wrong location, deleting..."
+            az group delete --name ${{ needs.setup.outputs.resource-group }} --yes --no-wait
+            # Wait for deletion to complete
+            while az group show --name ${{ needs.setup.outputs.resource-group }} >/dev/null 2>&1; do
+              echo "Waiting for resource group deletion..."
+              sleep 10
+            done
+          fi
+          
+          # Create resource group
           az group create \
             --name ${{ needs.setup.outputs.resource-group }} \
             --location "${{ env.LOCATION }}" \
-            --tags environment=${{ needs.setup.outputs.environment }} application=todolist || true
+            --tags environment=${{ needs.setup.outputs.environment }} application=todolist
 
       - name: Validate Bicep templates
         run: |
@@ -82,8 +94,19 @@ jobs:
           az deployment group validate \
             --resource-group ${{ needs.setup.outputs.resource-group }} \
             --template-file infra/main.bicep \
-            --parameters infra/parameters/main.${{ needs.setup.outputs.environment }}.parameters.json \
-            --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}'
+            --parameters environment="${{ needs.setup.outputs.environment }}" \
+            --parameters applicationName="todolist" \
+            --parameters location="${{ env.LOCATION }}" \
+            --parameters postgresAdminLogin="todolistadmin" \
+            --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' \
+            --parameters logRetentionInDays=30 \
+            --parameters databaseSkuName="Standard_B1ms" \
+            --parameters databaseTier="Burstable" \
+            --parameters databaseStorage=32768 \
+            --parameters enableHighAvailability=false \
+            --parameters containerAppMinReplicas=0 \
+            --parameters containerAppMaxReplicas=10 \
+            --parameters enableZoneRedundancy=false
 
   # Build and test application
   build-and-test:
@@ -140,8 +163,19 @@ jobs:
           DEPLOYMENT_OUTPUT=$(az deployment group create \
             --resource-group ${{ needs.setup.outputs.resource-group }} \
             --template-file infra/main.bicep \
-            --parameters infra/parameters/main.${{ needs.setup.outputs.environment }}.parameters.json \
+            --parameters environment="${{ needs.setup.outputs.environment }}" \
+            --parameters applicationName="todolist" \
+            --parameters location="${{ env.LOCATION }}" \
+            --parameters postgresAdminLogin="todolistadmin" \
             --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' \
+            --parameters logRetentionInDays=30 \
+            --parameters databaseSkuName="Standard_B1ms" \
+            --parameters databaseTier="Burstable" \
+            --parameters databaseStorage=32768 \
+            --parameters enableHighAvailability=false \
+            --parameters containerAppMinReplicas=0 \
+            --parameters containerAppMaxReplicas=10 \
+            --parameters enableZoneRedundancy=false \
             --query 'properties.outputs' \
             --output json)
           
@@ -208,8 +242,19 @@ jobs:
           az deployment group create \
             --resource-group ${{ needs.setup.outputs.resource-group }} \
             --template-file infra/main.bicep \
-            --parameters infra/parameters/main.${{ needs.setup.outputs.environment }}.parameters.json \
+            --parameters environment="${{ needs.setup.outputs.environment }}" \
+            --parameters applicationName="todolist" \
+            --parameters location="${{ env.LOCATION }}" \
+            --parameters postgresAdminLogin="todolistadmin" \
             --parameters postgresAdminPassword='${{ secrets.POSTGRES_ADMIN_PASSWORD }}' \
+            --parameters logRetentionInDays=30 \
+            --parameters databaseSkuName="Standard_B1ms" \
+            --parameters databaseTier="Burstable" \
+            --parameters databaseStorage=32768 \
+            --parameters enableHighAvailability=false \
+            --parameters containerAppMinReplicas=0 \
+            --parameters containerAppMaxReplicas=10 \
+            --parameters enableZoneRedundancy=false \
             --parameters containerImage="$FULL_IMAGE_NAME"
 
       - name: Verify deployment
