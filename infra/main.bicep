@@ -27,6 +27,9 @@ param databaseAdminUsername string = 'dbadmin'
 @secure()
 param databaseAdminPassword string
 
+@description('Whether to create role assignments (requires User Access Administrator permissions)')
+param createRoleAssignments bool = false
+
 @description('Tags to apply to all resources')
 param tags object = {
   Application: appName
@@ -147,6 +150,7 @@ module keyVault 'modules/key-vault.bicep' = {
     managedIdentityPrincipalId: managedIdentity.properties.principalId
     subnetId: networking.outputs.keyVaultSubnetId
     enablePublicAccess: environmentConfig[environment].enablePublicAccess
+    createRoleAssignments: createRoleAssignments
   }
 }
 
@@ -163,6 +167,7 @@ module containerRegistry 'modules/container-registry.bicep' = {
     managedIdentityPrincipalId: managedIdentity.properties.principalId
     subnetId: networking.outputs.acrSubnetId
     enablePublicAccess: environmentConfig[environment].enablePublicAccess
+    createRoleAssignments: createRoleAssignments
   }
 }
 

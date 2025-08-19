@@ -26,6 +26,9 @@ param enablePublicAccess bool = false
 @allowed(['standard', 'premium'])
 param sku string = 'standard'
 
+@description('Whether to create role assignments (requires User Access Administrator permissions)')
+param createRoleAssignments bool = true
+
 // =================
 // VARIABLES
 // =================
@@ -71,7 +74,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 // =================
 
 // Grant the managed identity access to Key Vault secrets
-resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(keyVault.id, managedIdentityPrincipalId, 'Key Vault Secrets User')
   scope: keyVault
   properties: {

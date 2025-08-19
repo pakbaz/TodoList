@@ -22,6 +22,9 @@ param subnetId string
 @description('Enable public network access to ACR')
 param enablePublicAccess bool = false
 
+@description('Whether to create role assignments (requires User Access Administrator permissions)')
+param createRoleAssignments bool = true
+
 @description('ACR SKU')
 @allowed(['Basic', 'Standard', 'Premium'])
 param sku string = 'Standard'
@@ -78,7 +81,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
 // =================
 
 // Grant the managed identity ACR pull permissions
-resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(acr.id, managedIdentityPrincipalId, 'AcrPull')
   scope: acr
   properties: {
