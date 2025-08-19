@@ -36,7 +36,6 @@ param tags object = {
   Application: appName
   Environment: environment
   ManagedBy: 'Bicep'
-  DeployedAt: utcNow()
 }
 
 // =================
@@ -45,7 +44,7 @@ param tags object = {
 
 var resourceNameSuffix = '${environment}-${uniqueString(resourceGroup().id)}'
 var managedIdentityName = '${appName}-identity-${resourceNameSuffix}'
-var keyVaultName = '${appName}-kv-${substring(uniqueString(resourceGroup().id), 0, 8)}'
+var keyVaultName = '${appName}-kv-${substring(uniqueString(resourceGroup().id, location, environment), 0, 8)}'
 var logAnalyticsName = '${appName}-logs-${resourceNameSuffix}'
 var appInsightsName = '${appName}-ai-${resourceNameSuffix}'
 var containerAppsEnvName = '${appName}-env-${resourceNameSuffix}'
