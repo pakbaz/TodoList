@@ -154,12 +154,14 @@ jobs:
       run: |
         Write-Host "Previewing infrastructure changes using Azure PowerShell..."
         
+        $securePassword = ConvertTo-SecureString -String "${{ steps.db-password.outputs.password }}" -AsPlainText -Force
+        
         $previewParams = @{
             ResourceGroupName = "${{ needs.determine-environment.outputs.resource-group }}"
             TemplateFile = "infra/main.bicep"
             TemplateParameterFile = "infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam"
             imageTag = "${{ needs.determine-environment.outputs.image-tag }}"
-            databaseAdminPassword = "${{ secrets.DATABASE_PASSWORD }}"
+            databaseAdminPassword = $securePassword
             WhatIf = $true
         }
         
@@ -172,13 +174,15 @@ jobs:
       run: |
         Write-Host "Deploying infrastructure using Azure PowerShell..."
         
+        $securePassword = ConvertTo-SecureString -String "${{ steps.db-password.outputs.password }}" -AsPlainText -Force
+        
         # Deploy the infrastructure using Azure PowerShell
         $deploymentParams = @{
             ResourceGroupName = "${{ needs.determine-environment.outputs.resource-group }}"
             TemplateFile = "infra/main.bicep"
             TemplateParameterFile = "infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam"
             imageTag = "${{ needs.determine-environment.outputs.image-tag }}"
-            databaseAdminPassword = "${{ steps.db-password.outputs.password }}"
+            databaseAdminPassword = $securePassword
         }
         
         $deployment = New-AzResourceGroupDeployment @deploymentParams
