@@ -110,7 +110,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-pr
     storage: {
       storageSizeGB: storage
       autoGrow: 'Enabled'
-      tier: 'P4'
+      tier: 'P10'
     }
     backup: {
       backupRetentionDays: backupRetentionDays
