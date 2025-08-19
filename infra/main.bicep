@@ -169,7 +169,7 @@ module containerRegistry 'modules/container-registry.bicep' = {
     subnetId: networking.outputs.acrSubnetId
     enablePublicAccess: environmentConfig[environment].enablePublicAccess
     createRoleAssignments: createRoleAssignments
-    sku: 'Standard'
+    sku: 'Basic'
   }
 }
 
@@ -191,6 +191,7 @@ module database 'modules/database.bicep' = {
     storage: environmentConfig[environment].database.storage
     subnetId: networking.outputs.databaseSubnetId
     enablePublicAccess: environmentConfig[environment].enablePublicAccess
+    logAnalyticsWorkspaceId: logAnalytics.outputs.logAnalyticsWorkspaceId
   }
 }
 

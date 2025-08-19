@@ -51,6 +51,9 @@ param backupRetentionDays int = 7
 @description('Enable geo-redundant backup')
 param geoRedundantBackup bool = false
 
+@description('Log Analytics workspace resource ID for diagnostic settings')
+param logAnalyticsWorkspaceId string
+
 // =================
 // VARIABLES
 // =================
@@ -196,6 +199,7 @@ resource postgresDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-p
   name: '${serverName}-diagnostics'
   scope: postgresServer
   properties: {
+    workspaceId: logAnalyticsWorkspaceId
     logs: [
       {
         categoryGroup: 'allLogs'
