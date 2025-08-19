@@ -20,22 +20,21 @@ RUN dotnet restore TodoList.csproj --verbosity normal --force --no-cache /p:Rest
 # Copy source code
 COPY . .
 
-# Build the application with fallback folders disabled
-RUN dotnet build TodoList.csproj -c Release --no-restore /p:RestoreFallbackFolders=""
-
-# Publish the application
-RUN dotnet publish TodoList.csproj -c Release --no-build -o /app/publish
+# Build and publish the application with fallback folders disabled
+RUN dotnet build TodoList.csproj -c Release --no-restore /p:RestoreFallbackFolders="" && \
+    dotnet publish TodoList.csproj -c Release --no-build -o /app/publish
 
 # Use the official .NET 9 runtime image for the final stage
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 
 WORKDIR /app
 
-# Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-# Create a non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Install curl for health checks and create non-root user
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -r appuser && \
+    useradd -r -g appuser appuser
 
 # Copy the published application
 COPY --from=build /app/publish .

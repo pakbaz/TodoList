@@ -44,7 +44,7 @@ param tags object = {
 
 var resourceNameSuffix = '${environment}-${uniqueString(resourceGroup().id)}'
 var managedIdentityName = '${appName}-identity-${resourceNameSuffix}'
-var keyVaultName = '${appName}-kv-${resourceNameSuffix}'
+var keyVaultName = '${appName}-kv-${substring(uniqueString(resourceGroup().id), 0, 8)}'
 var logAnalyticsName = '${appName}-logs-${resourceNameSuffix}'
 var appInsightsName = '${appName}-ai-${resourceNameSuffix}'
 var containerAppsEnvName = '${appName}-env-${resourceNameSuffix}'
@@ -93,9 +93,9 @@ var environmentConfig = {
     database: {
       sku: 'Standard_E2s_v3'
       tier: 'MemoryOptimized'
-      storage: 256
+      storage: 128
     }
-    enablePublicAccess: false
+    enablePublicAccess: true
   }
 }
 
