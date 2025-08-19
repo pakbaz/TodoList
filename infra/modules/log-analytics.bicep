@@ -70,36 +70,36 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 }
 
 // =================
-// DIAGNOSTIC SETTINGS
+// DIAGNOSTIC SETTINGS - Temporarily disabled for deployment troubleshooting
 // =================
 
-resource logAnalyticsDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: '${logAnalyticsName}-diagnostics'
-  scope: logAnalyticsWorkspace
-  properties: {
-    workspaceId: logAnalyticsWorkspace.id
-    logs: [
-      {
-        categoryGroup: 'allLogs'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-  }
-}
+// resource logAnalyticsDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+//   name: '${logAnalyticsName}-diagnostics'
+//   scope: logAnalyticsWorkspace
+//   properties: {
+//     workspaceId: logAnalyticsWorkspace.id
+//     logs: [
+//       {
+//         categoryGroup: 'allLogs'
+//         enabled: true
+//         retentionPolicy: {
+//           enabled: false
+//           days: 0
+//         }
+//       }
+//     ]
+//     metrics: [
+//       {
+//         category: 'AllMetrics'
+//         enabled: true
+//         retentionPolicy: {
+//           enabled: false
+//           days: 0
+//         }
+//       }
+//     ]
+//   }
+// }
 
 // =================
 // OUTPUTS
