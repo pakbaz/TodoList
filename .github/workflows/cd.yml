@@ -1,0 +1,329 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      image_tag:
+        description: 'Container image tag to deploy'
+        required: false
+        default: 'latest'
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  AZURE_RESOURCE_GROUP: 'rg-todolist'
+  
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
+
+jobs:
+  determine-environment:
+    name: Determine Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      image-tag: ${{ steps.env.outputs.image-tag }}
+      resource-group: ${{ steps.env.outputs.resource-group }}
+    
+    steps:
+    - name: Determine deployment environment
+      id: env
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          ENVIRONMENT="prod"
+          IMAGE_TAG="${{ github.sha }}"
+        elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+          ENVIRONMENT="staging"
+          IMAGE_TAG="${{ github.sha }}"
+        else
+          ENVIRONMENT="dev"
+          IMAGE_TAG="${{ github.sha }}"
+        fi
+        
+        RESOURCE_GROUP="${{ env.AZURE_RESOURCE_GROUP }}-$ENVIRONMENT"
+        
+        echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+        echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "resource-group=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
+        
+        echo "Deploying to environment: $ENVIRONMENT"
+        echo "Using image tag: $IMAGE_TAG"
+        echo "Resource group: $RESOURCE_GROUP"
+
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: determine-environment
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    
+    outputs:
+      acr-name: ${{ steps.deploy.outputs.acr-name }}
+      container-app-fqdn: ${{ steps.deploy.outputs.container-app-fqdn }}
+      key-vault-name: ${{ steps.deploy.outputs.key-vault-name }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login via OIDC
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Install Bicep CLI
+      run: |
+        curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+        chmod +x ./bicep
+        sudo mv ./bicep /usr/local/bin/bicep
+
+    - name: Create Resource Group
+      run: |
+        az group create \
+          --name ${{ needs.determine-environment.outputs.resource-group }} \
+          --location "East US" \
+          --tags \
+            Environment=${{ needs.determine-environment.outputs.environment }} \
+            Application=todolist \
+            ManagedBy=GitHub-Actions \
+            Repository=${{ github.repository }}
+
+    - name: Validate Bicep template
+      run: |
+        echo "Validating infrastructure template..."
+        bicep build infra/main.bicep
+        
+        az deployment group validate \
+          --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+          --template-file infra/main.bicep \
+          --parameters infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam \
+          --parameters imageTag=${{ needs.determine-environment.outputs.image-tag }} \
+          --parameters databaseAdminPassword="${{ secrets.DATABASE_PASSWORD }}"
+
+    - name: Preview infrastructure changes
+      run: |
+        echo "Previewing infrastructure changes..."
+        az deployment group what-if \
+          --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+          --template-file infra/main.bicep \
+          --parameters infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam \
+          --parameters imageTag=${{ needs.determine-environment.outputs.image-tag }} \
+          --parameters databaseAdminPassword="${{ secrets.DATABASE_PASSWORD }}"
+
+    - name: Deploy infrastructure
+      id: deploy
+      run: |
+        echo "Deploying infrastructure..."
+        
+        # Deploy the infrastructure
+        DEPLOYMENT_OUTPUT=$(az deployment group create \
+          --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+          --template-file infra/main.bicep \
+          --parameters infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam \
+          --parameters imageTag=${{ needs.determine-environment.outputs.image-tag }} \
+          --parameters databaseAdminPassword="${{ secrets.DATABASE_PASSWORD }}" \
+          --query 'properties.outputs' \
+          --output json)
+        
+        echo "Deployment completed successfully!"
+        echo "Deployment outputs:"
+        echo "$DEPLOYMENT_OUTPUT" | jq '.'
+        
+        # Extract outputs
+        ACR_NAME=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.acrName.value')
+        CONTAINER_APP_FQDN=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.containerAppFqdn.value')
+        KEY_VAULT_NAME=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.keyVaultName.value')
+        
+        echo "acr-name=$ACR_NAME" >> $GITHUB_OUTPUT
+        echo "container-app-fqdn=$CONTAINER_APP_FQDN" >> $GITHUB_OUTPUT
+        echo "key-vault-name=$KEY_VAULT_NAME" >> $GITHUB_OUTPUT
+        
+        echo "Infrastructure deployed:"
+        echo "- ACR: $ACR_NAME"
+        echo "- Container App FQDN: $CONTAINER_APP_FQDN"
+        echo "- Key Vault: $KEY_VAULT_NAME"
+
+    - name: Run database migrations
+      run: |
+        echo "Database migrations will be handled by the application startup"
+        echo "Entity Framework will automatically create/update the database schema"
+
+  deploy-application:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-infrastructure]
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login via OIDC
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Update Container App
+      run: |
+        echo "Updating Container App with new image..."
+        
+        # Get the container app name
+        CONTAINER_APP_NAME=$(az containerapp list \
+          --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+          --query '[0].name' \
+          --output tsv)
+        
+        # Update the container app with new image
+        az containerapp update \
+          --name $CONTAINER_APP_NAME \
+          --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+          --image ${{ needs.deploy-infrastructure.outputs.acr-name }}.azurecr.io/todolist:${{ needs.determine-environment.outputs.image-tag }} \
+          --revision-suffix ${{ needs.determine-environment.outputs.image-tag }}
+        
+        echo "Container App updated successfully!"
+
+    - name: Health check
+      run: |
+        echo "Performing health check..."
+        
+        FQDN="${{ needs.deploy-infrastructure.outputs.container-app-fqdn }}"
+        
+        # Wait for the application to be ready
+        echo "Waiting for application to be ready..."
+        for i in {1..30}; do
+          if curl -f -s "https://$FQDN/health" > /dev/null; then
+            echo "Application is healthy!"
+            break
+          fi
+          echo "Attempt $i: Application not ready yet, waiting 10 seconds..."
+          sleep 10
+        done
+        
+        # Final health check
+        echo "Final health check..."
+        curl -f -s "https://$FQDN/health" || {
+          echo "Health check failed!"
+          exit 1
+        }
+        
+        echo "Application deployed and healthy at: https://$FQDN"
+
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-infrastructure, deploy-application]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests..."
+        
+        FQDN="${{ needs.deploy-infrastructure.outputs.container-app-fqdn }}"
+        BASE_URL="https://$FQDN"
+        
+        # Test 1: Health endpoint
+        echo "Testing health endpoint..."
+        curl -f -s "$BASE_URL/health" | grep -q "Healthy" || {
+          echo "Health endpoint test failed!"
+          exit 1
+        }
+        
+        # Test 2: Home page
+        echo "Testing home page..."
+        curl -f -s "$BASE_URL/" | grep -q "TodoList" || {
+          echo "Home page test failed!"
+          exit 1
+        }
+        
+        # Test 3: Database connectivity (via health check)
+        echo "Testing database connectivity..."
+        curl -f -s "$BASE_URL/health" | grep -q "database" || {
+          echo "Database connectivity test failed!"
+          exit 1
+        }
+        
+        echo "All smoke tests passed!"
+
+  notify-deployment:
+    name: Notify Deployment
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-infrastructure, deploy-application, smoke-tests]
+    if: always()
+    
+    steps:
+    - name: Notify deployment status
+      run: |
+        if [[ "${{ needs.smoke-tests.result }}" == "success" ]]; then
+          echo "✅ Deployment to ${{ needs.determine-environment.outputs.environment }} completed successfully!"
+          echo "🌐 Application URL: https://${{ needs.deploy-infrastructure.outputs.container-app-fqdn }}"
+          echo "🏷️ Image Tag: ${{ needs.determine-environment.outputs.image-tag }}"
+        else
+          echo "❌ Deployment to ${{ needs.determine-environment.outputs.environment }} failed!"
+          echo "Please check the logs for more details."
+          exit 1
+        fi
+
+  cleanup-on-failure:
+    name: Cleanup on Failure
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-infrastructure, deploy-application, smoke-tests]
+    if: failure() && needs.determine-environment.outputs.environment == 'dev'
+    
+    steps:
+    - name: Azure Login via OIDC
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Rollback deployment
+      run: |
+        echo "Rolling back failed deployment..."
+        
+        # Get the container app name
+        CONTAINER_APP_NAME=$(az containerapp list \
+          --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+          --query '[0].name' \
+          --output tsv)
+        
+        # Get the previous active revision
+        PREVIOUS_REVISION=$(az containerapp revision list \
+          --name $CONTAINER_APP_NAME \
+          --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+          --query '[?properties.active==`true`] | [1].name' \
+          --output tsv)
+        
+        if [[ -n "$PREVIOUS_REVISION" ]]; then
+          echo "Rolling back to revision: $PREVIOUS_REVISION"
+          az containerapp revision set-mode \
+            --name $CONTAINER_APP_NAME \
+            --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+            --mode single \
+            --revision $PREVIOUS_REVISION
+          echo "Rollback completed!"
+        else
+          echo "No previous revision found for rollback"
+        fi

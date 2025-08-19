@@ -1,6 +1,7 @@
 # TodoList - Modern .NET Blazor Application
 
-[![Build and Deploy](https://github.com/YOUR_ORG/TodoList/actions/workflows/deploy.yml/badge.svg)](https://github.com/YOUR_ORG/TodoList/actions/workflows/deploy.yml)
+[![CI](https://github.com/YOUR_ORG/TodoList/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/TodoList/actions/workflows/ci.yml)
+[![CD](https://github.com/YOUR_ORG/TodoList/actions/workflows/cd.yml/badge.svg)](https://github.com/YOUR_ORG/TodoList/actions/workflows/cd.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![.NET 9](https://img.shields.io/badge/.NET-9.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/9.0)
 
