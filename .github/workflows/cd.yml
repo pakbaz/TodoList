@@ -119,7 +119,22 @@ jobs:
             Repository = $repository
         }
         
-        $rg = New-AzResourceGroup -Name $resourceGroupName -Location $location -Tag $tags -Force
+        # Check if resource group exists
+        $existingRg = Get-AzResourceGroup -Name $resourceGroupName -ErrorAction SilentlyContinue
+        if ($existingRg) {
+            if ($existingRg.Location -ne $location) {
+                Write-Host "Resource group exists in different location ($($existingRg.Location)). Deleting and recreating..."
+                Remove-AzResourceGroup -Name $resourceGroupName -Force
+                $rg = New-AzResourceGroup -Name $resourceGroupName -Location $location -Tag $tags
+            } else {
+                Write-Host "Resource group already exists in correct location. Updating tags..."
+                $rg = Set-AzResourceGroup -Name $resourceGroupName -Tag $tags
+            }
+        } else {
+            Write-Host "Creating new resource group..."
+            $rg = New-AzResourceGroup -Name $resourceGroupName -Location $location -Tag $tags
+        }
+        
         Write-Host "Resource group created/updated successfully: $($rg.ResourceGroupName)"
 
     - name: Generate database password (if needed)
