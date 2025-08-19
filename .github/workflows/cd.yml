@@ -105,6 +105,20 @@ jobs:
             ManagedBy=GitHub-Actions \
             Repository=${{ github.repository }}
 
+    - name: Generate database password (if needed)
+      id: db-password
+      run: |
+        if [ -z "${{ secrets.DATABASE_PASSWORD }}" ]; then
+          # Generate a random password
+          DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-24)
+          echo "::add-mask::$DB_PASSWORD"
+          echo "password=$DB_PASSWORD" >> $GITHUB_OUTPUT
+          echo "Generated random database password"
+        else
+          echo "password=${{ secrets.DATABASE_PASSWORD }}" >> $GITHUB_OUTPUT
+          echo "Using configured database password"
+        fi
+
     - name: Validate Bicep template
       run: |
         echo "Validating infrastructure template..."
@@ -115,7 +129,7 @@ jobs:
           --template-file infra/main.bicep \
           --parameters infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam \
           --parameters imageTag=${{ needs.determine-environment.outputs.image-tag }} \
-          --parameters databaseAdminPassword="${{ secrets.DATABASE_PASSWORD }}"
+          --parameters databaseAdminPassword="${{ steps.db-password.outputs.password }}"
 
     - name: Preview infrastructure changes
       run: |
@@ -138,7 +152,7 @@ jobs:
           --template-file infra/main.bicep \
           --parameters infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam \
           --parameters imageTag=${{ needs.determine-environment.outputs.image-tag }} \
-          --parameters databaseAdminPassword="${{ secrets.DATABASE_PASSWORD }}" \
+          --parameters databaseAdminPassword="${{ steps.db-password.outputs.password }}" \
           --query 'properties.outputs' \
           --output json)
         

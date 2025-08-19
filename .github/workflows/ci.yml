@@ -253,7 +253,7 @@ jobs:
 
     - name: Format check
       run: |
-        dotnet format --verify-no-changes --verbosity normal
+        dotnet format TodoList.sln --verify-no-changes --verbosity normal
 
     - name: Lint Dockerfile
       uses: hadolint/hadolint-action@v3.1.0
