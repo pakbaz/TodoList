@@ -1,5 +1,6 @@
 targetScope = 'resourceGroup'
 
+// Azure Infrastructure as Code for TodoList Application
 // =================
 // PARAMETERS
 // =================
