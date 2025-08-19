@@ -106,11 +106,11 @@ jobs:
       shell: pwsh
       run: |
         $resourceGroupName = "${{ needs.determine-environment.outputs.resource-group }}"
-        $location = "East US"
+        $location = "East US"  # Match the location in prod.bicepparam
         $environment = "${{ needs.determine-environment.outputs.environment }}"
         $repository = "${{ github.repository }}"
         
-        Write-Host "Creating or updating resource group: $resourceGroupName"
+        Write-Host "Creating or updating resource group: $resourceGroupName in $location"
         
         $tags = @{
             Environment = $environment

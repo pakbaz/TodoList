@@ -6,7 +6,7 @@ using '../main.bicep'
 
 param appName = 'todolist'
 param environment = 'prod'
-param location = 'East US 2'
+param location = 'East US'
 param imageTag = 'latest'
 param databaseAdminUsername = 'dbadmin'
 param databaseAdminPassword = readEnvironmentVariable('DATABASE_PASSWORD', 'ProductionPassword123!')
