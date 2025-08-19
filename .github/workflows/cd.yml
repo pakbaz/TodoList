@@ -89,6 +89,13 @@ jobs:
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         enable-AzPSSession: true
 
+    - name: Install Azure PowerShell modules
+      shell: pwsh
+      run: |
+        Write-Host "Installing Azure PowerShell modules..."
+        Install-Module -Name Az.Accounts, Az.Resources -Force -AllowClobber -Scope CurrentUser
+        Write-Host "Azure PowerShell modules installed successfully"
+
     - name: Install Bicep CLI
       run: |
         curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
