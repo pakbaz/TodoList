@@ -151,6 +151,7 @@ module keyVault 'modules/key-vault.bicep' = {
     subnetId: networking.outputs.keyVaultSubnetId
     enablePublicAccess: environmentConfig[environment].enablePublicAccess
     createRoleAssignments: createRoleAssignments
+    logAnalyticsWorkspaceId: logAnalytics.outputs.logAnalyticsWorkspaceId
   }
 }
 
@@ -168,7 +169,7 @@ module containerRegistry 'modules/container-registry.bicep' = {
     subnetId: networking.outputs.acrSubnetId
     enablePublicAccess: environmentConfig[environment].enablePublicAccess
     createRoleAssignments: createRoleAssignments
-    sku: 'Basic'
+    sku: 'Standard'
   }
 }
 

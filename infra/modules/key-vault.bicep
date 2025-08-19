@@ -29,6 +29,9 @@ param sku string = 'standard'
 @description('Whether to create role assignments (requires User Access Administrator permissions)')
 param createRoleAssignments bool = true
 
+@description('The resource ID of the Log Analytics workspace for diagnostics')
+param logAnalyticsWorkspaceId string = ''
+
 // =================
 // VARIABLES
 // =================
@@ -154,10 +157,11 @@ resource privateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneG
 // DIAGNOSTIC SETTINGS
 // =================
 
-resource keyVaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+resource keyVaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
   name: '${keyVaultName}-diagnostics'
   scope: keyVault
   properties: {
+    workspaceId: logAnalyticsWorkspaceId
     logs: [
       {
         categoryGroup: 'allLogs'
@@ -179,9 +183,6 @@ resource keyVaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-p
       }
     ]
   }
-  dependsOn: [
-    // We need a Log Analytics workspace for diagnostics, but we'll configure it later
-  ]
 }
 
 // =================
