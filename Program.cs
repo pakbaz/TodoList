@@ -90,9 +90,9 @@ async Task ConfigureAppAsync(WebApplication app)
         if (context.Request.Path.StartsWithSegments("/mcp"))
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
-            logger.LogInformation("MCP Endpoint Request: {Method} {Path} from {UserAgent}", 
-                context.Request.Method, 
-                context.Request.Path, 
+            logger.LogInformation("MCP Endpoint Request: {Method} {Path} from {UserAgent}",
+                context.Request.Method,
+                context.Request.Path,
                 context.Request.Headers.UserAgent.ToString());
         }
         await next();
@@ -107,10 +107,11 @@ async Task ConfigureAppAsync(WebApplication app)
 void ConfigureRoutes(WebApplication app)
 {
     // Health check
-    app.MapGet("/health", () => Results.Ok(new { 
-        status = "healthy", 
+    app.MapGet("/health", () => Results.Ok(new
+    {
+        status = "healthy",
         timestamp = DateTime.UtcNow,
-        environment = app.Environment.EnvironmentName 
+        environment = app.Environment.EnvironmentName
     }));
 
     // Static assets and Blazor components
@@ -125,26 +126,27 @@ void ConfigureRoutes(WebApplication app)
 void ConfigureMcpRoutes(WebApplication app)
 {
     // Simple REST endpoints for todo operations
-    app.MapGet("/mcp/todos", async (TodoListService service) => 
-        Results.Ok(new { 
-            success = true, 
+    app.MapGet("/mcp/todos", async (TodoListService service) =>
+        Results.Ok(new
+        {
+            success = true,
             todos = (await service.GetAllAsync()).Select(t => new { t.Title, t.IsDone }),
             count = await service.GetCountAsync()
         }));
 
-    app.MapPost("/mcp/todos", async (AddTodoRequest request, TodoListService service) => 
+    app.MapPost("/mcp/todos", async (AddTodoRequest request, TodoListService service) =>
     {
         await service.AddAsync(new TodoItem { Title = request.Title, IsDone = request.IsDone });
         return Results.Ok(new { success = true, message = $"Added todo: {request.Title}" });
     });
 
-    app.MapDelete("/mcp/todos/{title}", async (string title, TodoListService service) => 
+    app.MapDelete("/mcp/todos/{title}", async (string title, TodoListService service) =>
     {
         await service.RemoveAsync(title);
         return Results.Ok(new { success = true, message = $"Removed todo: {title}" });
     });
 
-    app.MapPut("/mcp/todos/{title}", async (string title, UpdateTodoRequest request, TodoListService service) => 
+    app.MapPut("/mcp/todos/{title}", async (string title, UpdateTodoRequest request, TodoListService service) =>
     {
         await service.MarkAsDoneAsync(title, request.IsDone);
         return Results.Ok(new { success = true, message = $"Updated todo: {title}" });
@@ -161,12 +163,12 @@ async Task InitializeDatabaseAsync(WebApplication app)
     using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<TodoDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    
+
     try
     {
         await context.Database.EnsureCreatedAsync();
         logger.LogInformation("Database initialized successfully");
-        
+
         // Seed sample data if empty
         if (!await context.TodoItems.AnyAsync())
         {
@@ -176,7 +178,7 @@ async Task InitializeDatabaseAsync(WebApplication app)
                 new TodoItem { Title = "Setup PostgreSQL Database", IsDone = true },
                 new TodoItem { Title = "Create Todo App", IsDone = false }
             };
-            
+
             context.TodoItems.AddRange(sampleTodos);
             await context.SaveChangesAsync();
             logger.LogInformation("Sample data seeded successfully");
@@ -192,49 +194,51 @@ async Task InitializeDatabaseAsync(WebApplication app)
 async Task<IResult> HandleMcpProtocol(HttpContext context, TodoListService service)
 {
     var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
-    
-    try 
+
+    try
     {
         using var reader = new StreamReader(context.Request.Body);
         var requestBody = await reader.ReadToEndAsync();
-        
+
         logger.LogInformation("MCP Request received: {RequestBody}", requestBody);
-        
+
         if (string.IsNullOrWhiteSpace(requestBody))
         {
             logger.LogWarning("Empty MCP request body");
-            return Results.BadRequest(new { 
-                jsonrpc = "2.0", 
-                id = (int?)null, 
-                error = new { code = -32700, message = "Empty request body" } 
+            return Results.BadRequest(new
+            {
+                jsonrpc = "2.0",
+                id = (int?)null,
+                error = new { code = -32700, message = "Empty request body" }
             });
         }
-        
+
         var jsonRequest = System.Text.Json.JsonDocument.Parse(requestBody);
-        
+
         if (!jsonRequest.RootElement.TryGetProperty("method", out var method))
         {
             logger.LogWarning("Invalid MCP request format: missing method");
-            return Results.BadRequest(new { 
-                jsonrpc = "2.0", 
-                id = (int?)null, 
-                error = new { code = -32600, message = "Invalid MCP request format" } 
+            return Results.BadRequest(new
+            {
+                jsonrpc = "2.0",
+                id = (int?)null,
+                error = new { code = -32600, message = "Invalid MCP request format" }
             });
         }
 
         var methodName = method.GetString();
         var hasId = jsonRequest.RootElement.TryGetProperty("id", out var id);
         var responseId = hasId ? id.GetInt32() : (int?)null;
-        
+
         logger.LogInformation("Processing MCP method: {Method} with ID: {Id}", methodName, responseId);
-        
+
         // Handle notifications (no response needed)
         if (!hasId && methodName?.StartsWith("notifications/") == true)
         {
             logger.LogInformation("Handling notification: {Method}", methodName);
             return Results.Ok();
         }
-        
+
         object result = methodName switch
         {
             "initialize" => CreateInitializeResponse(),
@@ -245,7 +249,7 @@ async Task<IResult> HandleMcpProtocol(HttpContext context, TodoListService servi
             "notifications/initialized" => new { acknowledged = true },
             _ => new { error = $"Unknown method: {methodName}" }
         };
-        
+
         var response = new { jsonrpc = "2.0", id = responseId, result };
         logger.LogInformation("MCP Response: {Response}", System.Text.Json.JsonSerializer.Serialize(response));
         return Results.Ok(response);
@@ -253,31 +257,35 @@ async Task<IResult> HandleMcpProtocol(HttpContext context, TodoListService servi
     catch (System.Text.Json.JsonException jsonEx)
     {
         logger.LogError(jsonEx, "JSON parsing error in MCP request");
-        var errorResponse = new {
+        var errorResponse = new
+        {
             jsonrpc = "2.0",
             id = (int?)null,
             error = new { code = -32700, message = "Parse error", data = jsonEx.Message }
         };
-        
+
         return Results.BadRequest(errorResponse);
     }
     catch (Exception ex)
     {
         logger.LogError(ex, "Unexpected error in MCP request handling");
-        var errorResponse = new {
+        var errorResponse = new
+        {
             jsonrpc = "2.0",
             id = (int?)null,
             error = new { code = -32603, message = "Internal error", data = ex.Message }
         };
-        
+
         return Results.BadRequest(errorResponse);
     }
 }
 
-object CreateInitializeResponse() => new {
+object CreateInitializeResponse() => new
+{
     protocolVersion = "2024-11-05",
     serverInfo = new { name = "TodoList MCP Server", version = "2.0.0" },
-    capabilities = new { 
+    capabilities = new
+    {
         tools = new { listChanged = false },
         logging = new { },
         prompts = new { },
@@ -285,7 +293,8 @@ object CreateInitializeResponse() => new {
     }
 };
 
-object CreateToolsListResponse() => new {
+object CreateToolsListResponse() => new
+{
     tools = new object[] {
         new {
             name = "add_todo",
@@ -328,7 +337,8 @@ object CreateToolsListResponse() => new {
     }
 };
 
-object CreatePromptsListResponse() => new {
+object CreatePromptsListResponse() => new
+{
     prompts = new object[] { } // Return empty array since we don't have prompts
 };
 
@@ -337,7 +347,7 @@ async Task<object> HandleToolCallAsync(System.Text.Json.JsonDocument jsonRequest
     var paramsElement = jsonRequest.RootElement.GetProperty("params");
     var toolName = paramsElement.GetProperty("name").GetString()!;
     var arguments = paramsElement.GetProperty("arguments");
-    
+
     object toolResult = toolName switch
     {
         "add_todo" => await HandleAddTodoAsync(arguments, service),
@@ -347,7 +357,8 @@ async Task<object> HandleToolCallAsync(System.Text.Json.JsonDocument jsonRequest
         _ => new { success = false, message = $"Unknown tool: {toolName}" }
     };
 
-    return new {
+    return new
+    {
         content = new[] {
             new { type = "text", text = System.Text.Json.JsonSerializer.Serialize(toolResult) }
         }
@@ -380,8 +391,9 @@ async Task<object> HandleMarkTodoAsync(System.Text.Json.JsonElement arguments, T
 async Task<object> HandleGetTodosAsync(TodoListService service)
 {
     var todos = await service.GetAllAsync();
-    return new { 
-        success = true, 
+    return new
+    {
+        success = true,
         todos = todos.Select(t => new { t.Title, t.IsDone }),
         count = todos.Count
     };

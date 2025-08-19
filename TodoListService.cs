@@ -58,7 +58,7 @@ public class TodoListService
     public async Task<TodoItem> AddAsync(TodoItem item, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
-        
+
         if (string.IsNullOrWhiteSpace(item.Title))
         {
             throw new ArgumentException("Todo item title cannot be empty.", nameof(item));
@@ -69,7 +69,7 @@ public class TodoListService
             // Check if item with same title already exists
             var existingItem = await _context.TodoItems
                 .FirstOrDefaultAsync(t => t.Title == item.Title, cancellationToken);
-                
+
             if (existingItem != null)
             {
                 _logger.LogWarning("Todo item with title '{Title}' already exists", item.Title);
@@ -78,7 +78,7 @@ public class TodoListService
 
             // Set creation timestamp
             item.CreatedAt = DateTime.UtcNow;
-            
+
             var entry = await _context.TodoItems.AddAsync(item, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
 
@@ -166,7 +166,7 @@ public class TodoListService
 
             await _context.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("Updated {Count} todo item(s) with title '{Title}' to {Status}", 
+            _logger.LogInformation("Updated {Count} todo item(s) with title '{Title}' to {Status}",
                 itemsToUpdate.Count, title, isDone ? "completed" : "incomplete");
             return itemsToUpdate.Count;
         }
@@ -228,7 +228,7 @@ public class TodoListService
     public async Task<TodoItem?> UpdateAsync(TodoItem item, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
-        
+
         if (string.IsNullOrWhiteSpace(item.Title))
         {
             throw new ArgumentException("Todo item title cannot be empty.", nameof(item));

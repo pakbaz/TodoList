@@ -29,7 +29,7 @@ public class TodoDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
-        
+
         base.OnModelCreating(modelBuilder);
 
         // Configure TodoItem entity
@@ -37,28 +37,28 @@ public class TodoDbContext : DbContext
         {
             // Primary key
             entity.HasKey(e => e.Id);
-            
+
             // Properties
             entity.Property(e => e.Title)
                 .IsRequired()
                 .HasMaxLength(500)
                 .HasComment("The title/description of the todo item");
-                
+
             entity.Property(e => e.IsDone)
                 .HasDefaultValue(false)
                 .HasComment("Indicates whether the todo item is completed");
-                
+
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasComment("Timestamp when the todo item was created");
-            
+
             // Indexes for performance
             entity.HasIndex(e => e.Title)
                 .HasDatabaseName("IX_TodoItems_Title");
-                
+
             entity.HasIndex(e => e.IsDone)
                 .HasDatabaseName("IX_TodoItems_IsDone");
-                
+
             entity.HasIndex(e => e.CreatedAt)
                 .HasDatabaseName("IX_TodoItems_CreatedAt");
         });
