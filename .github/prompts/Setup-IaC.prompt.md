@@ -72,9 +72,12 @@ Create `.github/workflows`:
   - On failure: swap to previous ACA revision (rollback).
 
 ### 6) Secrets & Config
-- With **@github**, ensure repo/environment secrets or variables exist:
-  - `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RG_NAME`, `ACR_NAME`, `LOCATION`, `APP_NAME`, optional `DB_CHOICE`.
+- With **@github** and **@azure**, ensure repo/environment secrets or variables exist and GitHub pipeline has full access to deploy the resources to Azure Resource Group using OIDC Login and other best practices use github cli and azure cli to generate required secrets and store it in GitHub if necessary but avoid secrets and prefer managed identity or workload identity with OIDC Login option between GitHub and Azure.:
 - Prefer Key Vault for app secrets; workflows should not echo secrets.
+- Use **@azure** to create/update secrets in Key Vault.
+- Do everything possible to avoid hardcoding secrets in the repository.
+- Automatically figure out what to do according to best practices and @microsoft-docs.
+- update bicep modules to use Key Vault references for secrets.
 
 ### 7) Documentation
 - Create **`/docs/devops.md`**:
