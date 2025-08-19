@@ -175,12 +175,58 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
     - name: Azure Login via OIDC
       uses: azure/login@v2
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Check if image exists in ACR
+      id: check-image
+      run: |
+        ACR_NAME="${{ needs.deploy-infrastructure.outputs.acr-name }}"
+        IMAGE_TAG="${{ needs.determine-environment.outputs.image-tag }}"
+        
+        echo "Checking if image todolist:$IMAGE_TAG exists in $ACR_NAME..."
+        
+        if az acr repository show-tags --name $ACR_NAME --repository todolist --output tsv | grep -q "^$IMAGE_TAG$"; then
+          echo "Image todolist:$IMAGE_TAG found in ACR"
+          echo "image-exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "Image todolist:$IMAGE_TAG not found in ACR, will build it"
+          echo "image-exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build and push image (if needed)
+      if: steps.check-image.outputs.image-exists == 'false'
+      run: |
+        ACR_NAME="${{ needs.deploy-infrastructure.outputs.acr-name }}"
+        IMAGE_TAG="${{ needs.determine-environment.outputs.image-tag }}"
+        
+        echo "Building and pushing image todolist:$IMAGE_TAG to $ACR_NAME..."
+        
+        # Login to ACR
+        az acr login --name $ACR_NAME
+        
+        # Build and push the image
+        FULL_IMAGE_NAME="$ACR_NAME.azurecr.io/todolist:$IMAGE_TAG"
+        
+        docker build \
+          --build-arg BUILD_VERSION=$IMAGE_TAG \
+          --tag $FULL_IMAGE_NAME \
+          --tag $ACR_NAME.azurecr.io/todolist:latest \
+          .
+        
+        docker push $FULL_IMAGE_NAME
+        docker push $ACR_NAME.azurecr.io/todolist:latest
+        
+        echo "Image built and pushed successfully!"
 
     - name: Update Container App
       run: |

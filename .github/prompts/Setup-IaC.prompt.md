@@ -56,6 +56,7 @@ mode: agent
   - Mark sensitive params `@secure`.
   - Store DB credentials in Key Vault (generated or provided); app reads via secret ref or MI.
 - Validation:
+  - use bicep cli which is installed to validate templates.
   - Use **@azure** to `bicep build`/`what-if`.
 
 ### 5) GitHub Actions (CI/CD)
