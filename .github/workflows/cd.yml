@@ -87,6 +87,7 @@ jobs:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        enable-AzPSSession: true
 
     - name: Install Bicep CLI
       run: |
@@ -95,15 +96,24 @@ jobs:
         sudo mv ./bicep /usr/local/bin/bicep
 
     - name: Create Resource Group
+      shell: pwsh
       run: |
-        az group create \
-          --name ${{ needs.determine-environment.outputs.resource-group }} \
-          --location "East US" \
-          --tags \
-            Environment=${{ needs.determine-environment.outputs.environment }} \
-            Application=todolist \
-            ManagedBy=GitHub-Actions \
-            Repository=${{ github.repository }}
+        $resourceGroupName = "${{ needs.determine-environment.outputs.resource-group }}"
+        $location = "East US"
+        $environment = "${{ needs.determine-environment.outputs.environment }}"
+        $repository = "${{ github.repository }}"
+        
+        Write-Host "Creating or updating resource group: $resourceGroupName"
+        
+        $tags = @{
+            Environment = $environment
+            Application = "todolist"
+            ManagedBy = "GitHub-Actions"
+            Repository = $repository
+        }
+        
+        $rg = New-AzResourceGroup -Name $resourceGroupName -Location $location -Tag $tags -Force
+        Write-Host "Resource group created/updated successfully: $($rg.ResourceGroupName)"
 
     - name: Generate database password (if needed)
       id: db-password
@@ -133,47 +143,60 @@ jobs:
         #   --parameters databaseAdminPassword="${{ steps.db-password.outputs.password }}"
 
     - name: Preview infrastructure changes
+      shell: pwsh
       run: |
-        echo "Previewing infrastructure changes..."
-        az deployment group what-if \
-          --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
-          --template-file infra/main.bicep \
-          --parameters infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam \
-          --parameters imageTag=${{ needs.determine-environment.outputs.image-tag }} \
-          --parameters databaseAdminPassword="${{ secrets.DATABASE_PASSWORD }}"
+        Write-Host "Previewing infrastructure changes using Azure PowerShell..."
+        
+        $previewParams = @{
+            ResourceGroupName = "${{ needs.determine-environment.outputs.resource-group }}"
+            TemplateFile = "infra/main.bicep"
+            TemplateParameterFile = "infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam"
+            imageTag = "${{ needs.determine-environment.outputs.image-tag }}"
+            databaseAdminPassword = "${{ secrets.DATABASE_PASSWORD }}"
+            WhatIf = $true
+        }
+        
+        $preview = New-AzResourceGroupDeployment @previewParams
+        Write-Host "Preview completed successfully!"
 
     - name: Deploy infrastructure
       id: deploy
+      shell: pwsh
       run: |
-        echo "Deploying infrastructure..."
+        Write-Host "Deploying infrastructure using Azure PowerShell..."
         
-        # Deploy the infrastructure
-        DEPLOYMENT_OUTPUT=$(az deployment group create \
-          --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
-          --template-file infra/main.bicep \
-          --parameters infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam \
-          --parameters imageTag=${{ needs.determine-environment.outputs.image-tag }} \
-          --parameters databaseAdminPassword="${{ steps.db-password.outputs.password }}" \
-          --query 'properties.outputs' \
-          --output json)
+        # Deploy the infrastructure using Azure PowerShell
+        $deploymentParams = @{
+            ResourceGroupName = "${{ needs.determine-environment.outputs.resource-group }}"
+            TemplateFile = "infra/main.bicep"
+            TemplateParameterFile = "infra/parameters/${{ needs.determine-environment.outputs.environment }}.bicepparam"
+            imageTag = "${{ needs.determine-environment.outputs.image-tag }}"
+            databaseAdminPassword = "${{ steps.db-password.outputs.password }}"
+        }
         
-        echo "Deployment completed successfully!"
-        echo "Deployment outputs:"
-        echo "$DEPLOYMENT_OUTPUT" | jq '.'
+        $deployment = New-AzResourceGroupDeployment @deploymentParams
         
-        # Extract outputs
-        ACR_NAME=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.acrName.value')
-        CONTAINER_APP_FQDN=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.containerAppFqdn.value')
-        KEY_VAULT_NAME=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.keyVaultName.value')
-        
-        echo "acr-name=$ACR_NAME" >> $GITHUB_OUTPUT
-        echo "container-app-fqdn=$CONTAINER_APP_FQDN" >> $GITHUB_OUTPUT
-        echo "key-vault-name=$KEY_VAULT_NAME" >> $GITHUB_OUTPUT
-        
-        echo "Infrastructure deployed:"
-        echo "- ACR: $ACR_NAME"
-        echo "- Container App FQDN: $CONTAINER_APP_FQDN"
-        echo "- Key Vault: $KEY_VAULT_NAME"
+        if ($deployment.ProvisioningState -eq "Succeeded") {
+            Write-Host "Deployment completed successfully!"
+            
+            # Extract outputs
+            $acrName = $deployment.Outputs.acrName.Value
+            $containerAppFqdn = $deployment.Outputs.containerAppFqdn.Value
+            $keyVaultName = $deployment.Outputs.keyVaultName.Value
+            
+            # Set GitHub outputs
+            "acr-name=$acrName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "container-app-fqdn=$containerAppFqdn" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "key-vault-name=$keyVaultName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            
+            Write-Host "Infrastructure deployed:"
+            Write-Host "- ACR: $acrName"
+            Write-Host "- Container App FQDN: $containerAppFqdn"
+            Write-Host "- Key Vault: $keyVaultName"
+        } else {
+            Write-Error "Deployment failed with state: $($deployment.ProvisioningState)"
+            exit 1
+        }
 
     - name: Run database migrations
       run: |
