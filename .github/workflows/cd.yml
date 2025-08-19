@@ -106,7 +106,7 @@ jobs:
       shell: pwsh
       run: |
         $resourceGroupName = "${{ needs.determine-environment.outputs.resource-group }}"
-        $location = "East US"  # Match the location in prod.bicepparam
+        $location = "West US 2"  # Match the location in prod.bicepparam
         $environment = "${{ needs.determine-environment.outputs.environment }}"
         $repository = "${{ github.repository }}"
         

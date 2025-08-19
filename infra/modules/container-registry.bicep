@@ -27,7 +27,7 @@ param createRoleAssignments bool = true
 
 @description('ACR SKU')
 @allowed(['Basic', 'Standard', 'Premium'])
-param sku string = 'Standard'
+param sku string = 'Basic'
 
 // =================
 // VARIABLES
