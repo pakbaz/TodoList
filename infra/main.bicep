@@ -169,7 +169,7 @@ module containerRegistry 'modules/container-registry.bicep' = {
     subnetId: networking.outputs.acrSubnetId
     enablePublicAccess: environmentConfig[environment].enablePublicAccess
     createRoleAssignments: createRoleAssignments
-    sku: 'Basic'
+    sku: 'Standard'
   }
 }
 
