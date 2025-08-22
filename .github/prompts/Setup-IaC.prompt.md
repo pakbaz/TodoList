@@ -126,7 +126,8 @@ mode: agent
   - Maintenance tips (update image, scale app, rotate secrets).
   - Troubleshooting common issues.
 
-### 8) Commit & PR
+### 8) Commit & PR , Test and Verification
+- In this Step DON'T STOP until everything is verified, deployed and PR is Merged
 - Create a new branch `iac-setup` (or similar).
 - Commit changes:
   - `/docs/1.architecture.md`
@@ -138,8 +139,6 @@ mode: agent
 - Undo and delete any temporary files or other artifacts that are not needed in the final commit.
 - Push branch; create PR to `main` with description of changes.
 - Review and merge the PR. No approval needed as you are the only contributor.
-
-### 9) Testing & Verification
 - At this point deployment should already be undergoing to Azure. Use **@github** to monitor the workflow run status.
 - Use **@azure** to verify the deployment status and health of the resources.
 - VERY IMPORTANT!: Don't finish or stop until this step is done. reiterate and put timer to double checl that everything is fully deployed and verified.
@@ -151,7 +150,7 @@ mode: agent
   - Logs/metrics in Azure Monitor, Application Insights.
   - If issues, check GitHub Actions logs, Terraform state, Azure resource status.
 
-- Repeat steps 4-9 if needed to fix issues or improve setup.
+- Repeat steps 4-8 if needed to fix issues or improve setup.
 - Keep iterating until everything is perfect and verified.
 - Once verified, consider tagging the commit (e.g., `iac-setup-complete`).
 - Document any issues under `/docs/5.issues.md` if needed to avoid repeating the same mistakes in the future and always check best practices for any updates or changes in the future. use @fetch , @context7 and @azure to fetch latest best practices and update the documentation if needed.
@@ -170,4 +169,4 @@ mode: agent
 - CI/CD: single workflow with build + deploy jobs; use artifacts to pass image tag.
 
 ## Execute
-- Perform steps 1→9 in order using @context7 @azure @githubrepo @github as specified.
+- Perform steps 1→8 in order using @context7 @azure @githubrepo @github as specified. Don't Skip any steps and In the last step make sure you verify everything.
