@@ -521,3 +521,4 @@ temp.*
 *.old
 Program.Simple.cs
 CONVERSION-SUMMARY.md
+.azure

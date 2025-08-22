@@ -8,13 +8,12 @@ mode: agent
 - Repo contains an ASP.NET Core web app (may include extra codes for frontend that could be in another language like react.js or angular it could have backend api project or other extra microservices).
 - Use **Docker** for containerization, deploy to **Azure Container Apps (ACA)** or **Azure Kubernetes Service (AKS)**.
 - Use **Azure Container Registry (ACR)**, **Azure Key Vault**, and one DB: **Azure SQL** or **Azure PostgreSQL** or **Cosmos DB**.
-- Use **Azure Virtual Network** (+ **Application Gateway** if public ingress hardening needed), **Azure Monitor + Log Analytics + Application Insights**.
 - **OIDC GitHub→Azure** is already configured for the repository with variables AZURE_CLIENT_ID, AZURE_SUBSCRIPTION_ID and AZURE_TENANT_ID set. you may use those secrets in GitHub Action for Logging into Azure using OIDC.
 - **Managed Identity** is enabled for the Azure resources to allow secure access without credentials.
 - **Azure CLI** is installed and configured in the GitHub Actions runner.
 - **GitHub CLI** is installed and configured in the GitHub Actions runner.
 - **Docker CLI and Docker-Compose** is installed. You may use these tools to build and test your containers locally before deploying to Azure.
-- **Azure Developer CLI** is installed and configured in the GitHub Actions runner.
+- **Azure Developer CLI** is installed and configured to work with your Azure subscription.
 
 
 ## Tools
@@ -30,7 +29,7 @@ mode: agent
 
 ### 1) Scan & Detect
 - Scan for **`/docs/1.architecture.md`**. if the file exist, skip this step
-- Scan repo for: ASP.NET Core projects, `Dockerfile`/`docker-compose`, database usage, static assets, tests and README.md to understand project structure and architecture.
+- Scan repo for: ASP.NET Core projects, Dockerfile, docker-compose, database usage, static assets, tests and README.md to understand project structure and architecture.
 - Infer architecture: single service vs multi-service. Prefer one container per service; single container for monolith. Deploy database as a separate service.
 - Put everything into **`/docs/1.architecture.md`**. and go to next step in the flow.
 
@@ -53,13 +52,18 @@ mode: agent
   - Verify/rollback approach.
   - Make sure the deployment is idempotent and don't delete existing resources if redeployed and detect existing resources.
   - We are going to use `azd infra generate` to create infrastructure as code (IaC) templates.
+  - Use **@microsoft-docs** to query latest practices to use azd to generate infrastructure as code.
+  - Use **@fetch** to retrieve code snippets and examples from "https://azure.github.io/awesome-azd/" that closely match the project requirements and architecture and use `azd template` to create reusable templates.
+  - use `azd init` to initialize a new Azure Developer project.
+  - use `azd env` to create and configure environments (dev, staging, prod).
+  - use `azd package` to create a package for deployment.
+  - Write concise summary (no links) to **`/docs/3.implementation-plan.md`**.
 
-- Write concise summary (no links) to **`/docs/3.implementation-plan.md`**.
+- double check the implementation plan for completeness and accuracy.
 
 ### 4) Generate Infrastructure using Azure Developer CLI
-- Use `azd init` to create a new Azure Developer project.
-- Use `azd env add` to create and configure environments (dev, staging, prod).
-- Use `azd infra generate` to create infrastructure as code (IaC) templates.
+- use implementation plan to create infrastructure using `azd` commands. this should generate infrastructure bicep template code and azure.yaml
+- use `azd infra generate` to create infrastructure as code (IaC) templates which will generate bicep templates in `infra/`.
 
 ### 5) GitHub Actions (CI/CD)
 - Create **`.github/workflows/deploy.yml`**:
@@ -88,34 +92,34 @@ mode: agent
 - Update **`/docs/4.setup-instructions.md`**:
 
 
-### 8) Commit & PR , Test and Verification
-- In this Step DON'T STOP until everything is verified, deployed and PR is Merged
-- Create a new branch `iac-setup` (or similar).
+### 8) Commit, PR, Deploy, and Verify
+- Do not stop until the app is deployed, verified, and the PR is merged.
+- Create a branch `iac-setup` (or similar).
 - Commit changes:
   - `/docs/1.architecture.md`
   - `/docs/2.best-practices.md`
   - `/docs/3.implementation-plan.md`
   - `/docs/4.setup-instructions.md`
-  - `/infra/*` (Terraform files).
-  - `/.github/workflows/deploy.yml`. 
-- Undo and delete any temporary files or other artifacts that are not needed in the final commit.
-- Push branch; create PR to `main` with description of changes.
-- Review and merge the PR. No approval needed as you are the only contributor.
-- At this point deployment should already be undergoing to Azure. Use **@github** to monitor the workflow run status.
-- Use **@azure** to verify the deployment status and health of the resources.
-- VERY IMPORTANT!: Don't finish or stop until this step is done. reiterate and put timer to double checl that everything is fully deployed and verified.
-- Verify:
-  - Terraform applied without errors; resources created as expected.
-  - Azure resources exist: RG, VNet, ACR, Key Vault, DB, ACA/AKS.
-  - ACA/AKS app is running; ingress URL accessible.
-  - App connects to DB; reads secrets from Key Vault.
-  - Logs/metrics in Azure Monitor, Application Insights.
-  - If issues, check GitHub Actions logs, Terraform state, Azure resource status.
-
-- Repeat steps 4-8 if needed to fix issues or improve setup.
-- Keep iterating until everything is perfect and verified.
-- Once verified, consider tagging the commit (e.g., `iac-setup-complete`).
-- Document any issues under `/docs/5.issues.md` if needed to avoid repeating the same mistakes in the future and always check best practices for any updates or changes in the future. use @fetch , @context7 and @azure to fetch latest best practices and update the documentation if needed.
+  - `/infra/*` (IaC templates: Bicep)
+  - `/.github/workflows/deploy.yml`
+  - `/azure.yaml` (if using `azd`)
+- Remove any temporary files or artifacts not needed in the final commit.
+- Push the branch and open a PR to `main` with a concise description of the changes.
+- Review and merge the PR (self-approve if you are the only contributor).
+- After merge, deployment should start automatically:
+  - Use **@github** to monitor the workflow run and logs until completion.
+  - Use **@azure** to verify resource provisioning and application health.
+- Verification checklist (adapt based on your architecture; mark N/A where not used):
+  - Azure resources exist: RG, VNet (if used), ACR, Key Vault (if used), DB (PostgreSQL/SQL/Cosmos), ACA/AKS.
+  - App is running in ACA/AKS; external ingress URL is reachable (HTTP 200/OK).
+  - App connects to the database; secrets are provided via Key Vault or environment (prefer Key Vault).
+  - Logs/metrics are flowing to Log Analytics and/or Application Insights.
+- If anything fails:
+  - Fix forward with small commits on the same branch and re-run the workflow.
+  - Ensure required repository/environment secrets and variables are set (e.g., `DB_ADMIN_PASSWORD`).
+- When fully verified:
+  - Tag the commit (e.g., `iac-setup-complete`).
+  - Optionally add `/docs/5.issues.md` to record lessons learned and periodically refresh best practices using **@fetch**, **@context7**, and **@azure**.
 
 
 ---
@@ -127,8 +131,8 @@ mode: agent
 - Images: tag with `${{ github.sha }}`; keep immutable history.
 - Security: OIDC only (no SP secrets), least-privileged tokens, pin action versions.
 - Secrets: prefer **Key Vault**; use MI for app access; workflows avoid echoing secrets.
-- Terraform: modular, reusable; validate before apply; idempotent (no resource deletion on reapply).
 - CI/CD: single workflow with build + deploy jobs; use artifacts to pass image tag.
 
 ## Execute
 - Perform steps 1→8 in order using @context7 @azure @githubrepo @github as specified. Don't Skip any steps and In the last step make sure you verify everything.
+- In the last step, ensure all resources are provisioned and the application is running as expected.
