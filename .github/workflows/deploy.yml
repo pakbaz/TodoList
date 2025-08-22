@@ -74,8 +74,12 @@ jobs:
     environment: ${{ matrix.environment }}
     outputs:
       resource-group-name: ${{ steps.infrastructure.outputs.resourceGroupName }}
+      container-registry-login-server: ${{ steps.infrastructure.outputs.containerRegistryLoginServer }}
       container-registry-name: ${{ steps.infrastructure.outputs.containerRegistryName }}
-      container-apps-environment-name: ${{ steps.infrastructure.outputs.containerAppsEnvironmentName }}
+      container-app-environment-id: ${{ steps.infrastructure.outputs.containerAppEnvironmentId }}
+      key-vault-name: ${{ steps.infrastructure.outputs.keyVaultName }}
+      key-vault-uri: ${{ steps.infrastructure.outputs.keyVaultUri }}
+      application-insights-connection-string: ${{ steps.infrastructure.outputs.applicationInsightsConnectionString }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -95,7 +99,13 @@ jobs:
           scope: subscription
           region: East US 2
           template: infra/main.bicep
-          parameters: infra/parameters/${{ matrix.environment }}.bicepparam
+          parameters: >
+            location=eastus2
+            environmentName=${{ matrix.environment }}
+            applicationName=todolist
+            postgresAdminLogin=todolistadmin
+            postgresAdminPassword=${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+            deploymentPrincipalId=${{ env.AZURE_CLIENT_ID }}
           deploymentName: 'infrastructure-${{ matrix.environment }}-${{ github.run_number }}'
 
   build-and-push:
@@ -121,15 +131,15 @@ jobs:
       - name: Build and push container image
         run: |
           # Login to Azure Container Registry
-          az acr login --name ${{ env.REGISTRY_NAME }}${{ matrix.environment }}
+          az acr login --name ${{ needs.infrastructure.outputs.container-registry-name }}
           
           # Build and tag the image
-          docker build -t ${{ env.REGISTRY_NAME }}${{ matrix.environment }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-          docker tag ${{ env.REGISTRY_NAME }}${{ matrix.environment }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ env.REGISTRY_NAME }}${{ matrix.environment }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
+          docker build -t ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker tag ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:latest
           
           # Push the image
-          docker push ${{ env.REGISTRY_NAME }}${{ matrix.environment }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker push ${{ env.REGISTRY_NAME }}${{ matrix.environment }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:latest
 
   deploy-application:
     name: Deploy Application
@@ -160,8 +170,13 @@ jobs:
           parameters: >
             environmentName=${{ matrix.environment }}
             applicationName=todolist
-            containerImage=${{ env.REGISTRY_NAME }}${{ matrix.environment }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            deploymentPrincipalId=${{ env.AZURE_CLIENT_ID }}
+            containerAppEnvironmentId=${{ needs.infrastructure.outputs.container-app-environment-id }}
+            containerRegistryLoginServer=${{ needs.infrastructure.outputs.container-registry-login-server }}
+            containerRegistryName=${{ needs.infrastructure.outputs.container-registry-name }}
+            containerImage=${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            keyVaultName=${{ needs.infrastructure.outputs.key-vault-name }}
+            keyVaultUri=${{ needs.infrastructure.outputs.key-vault-uri }}
+            applicationInsightsConnectionString=${{ needs.infrastructure.outputs.application-insights-connection-string }}
           deploymentName: 'app-deployment-${{ matrix.environment }}-${{ github.run_number }}'
 
   smoke-tests:

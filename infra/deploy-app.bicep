@@ -14,6 +14,9 @@ param containerAppEnvironmentId string
 @description('Container Registry login server')
 param containerRegistryLoginServer string
 
+@description('Container Registry name')
+param containerRegistryName string
+
 @description('Container image name and tag')
 param containerImage string
 
@@ -41,7 +44,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
 
 // Reference to existing Container Registry
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' existing = {
-  name: last(split(containerRegistryLoginServer, '.'))
+  name: containerRegistryName
 }
 
 // Store Application Insights connection string in Key Vault
