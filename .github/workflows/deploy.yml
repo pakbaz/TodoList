@@ -40,6 +40,8 @@ permissions:
   id-token: write
   contents: read
   pull-requests: write
+  checks: write
+  statuses: write
 
 jobs:
   detect-changes:
@@ -117,6 +119,7 @@ jobs:
       - name: Publish test results
         uses: dorny/test-reporter@v1
         if: always()
+        continue-on-error: true
         with:
           name: .NET Tests
           path: TestResults/*.trx
