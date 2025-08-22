@@ -13,7 +13,6 @@ mode: agent
 - **Azure CLI** is installed and configured in the GitHub Actions runner.
 - **GitHub CLI** is installed and configured in the GitHub Actions runner.
 - **Docker CLI and Docker-Compose** is installed. You may use these tools to build and test your containers locally before deploying to Azure.
-- **Azure Developer CLI** is installed and configured to work with your Azure subscription.
 
 
 ## Tools
@@ -37,7 +36,7 @@ mode: agent
 - Scan for **`/docs/2.best-practices.md`** . if the file exist, skip this step
 - Read  **`/docs/1.architecture.md`** for the context of the research.
 - Use **@context7** , **@azure** and **@microsoft-docs** to collect current guidance for AKS, ACA, ACR, Key Vault, VNet/AppGW, Monitoring in Azure, GitHub Actions and Database options in Azure as well as other Infrastructure as Code best practices.
-- Use **@fetch** to retrieve code snippets and examples from "https://azure.github.io/awesome-azd/" that closely match the project requirements and architecture.
+- Use **@microsoft-docs** to fetch infomation about latest Azure Bicep documentations
 - Write concise summary (no links) to **`/docs/2.best-practices.md`** 
 
 ### 3) Implementation Plan
@@ -51,48 +50,40 @@ mode: agent
   - Secret strategy (Use Azure Key Vault if possible).
   - Verify/rollback approach.
   - Make sure the deployment is idempotent and don't delete existing resources if redeployed and detect existing resources.
-  - We are going to use `azd infra generate` to create infrastructure as code (IaC) templates.
-  - Use **@microsoft-docs** to query latest practices to use azd to generate infrastructure as code.
-  - Use **@fetch** to retrieve code snippets and examples from "https://azure.github.io/awesome-azd/" that closely match the project requirements and architecture and use `azd template` to create reusable templates.
-  - use `azd init` to initialize a new Azure Developer project.
-  - use `azd env` to create and configure environments (dev, staging, prod).
-  - use `azd package` to create a package for deployment.
+  - Use Bicep Modular Templates for reusable components.
+  - Implement parameterized templates for environment-specific configurations.
   - Write concise summary (no links) to **`/docs/3.implementation-plan.md`**.
 
 - double check the implementation plan for completeness and accuracy.
 
-### 4) Generate Infrastructure using Azure Developer CLI
-- use implementation plan to create infrastructure using `azd` commands. this should generate infrastructure bicep template code and azure.yaml
-- use `azd infra generate` to create infrastructure as code (IaC) templates which will generate bicep templates in `infra/`.
+### 4) Generate Infrastructure using Azure Bicep
+- Use `/docs/4.setup-instructions.md` as a guide to create Bicep templates for the infrastructure.
+- Implement Bicep modules for reusable components.
+- Use Bicep parameter files for environment-specific configurations.
+- Implement Bicep outputs for cross-module references.
+- put everything under `/infra` directory. Put modules in `/infra/modules` and main Bicep file in `/infra/main.bicep`.
 
-### 5) GitHub Actions (CI/CD)
-- Create **`.github/workflows/deploy.yml`**:
-  - Trigger on push to `main` branch.
-  - Jobs:
-    - **Build**:
-      - Checkout code.
-      - Set up .NET, Node.js (if frontend), Docker.
-      - Build/test projects.
-      - Build/push Docker images to ACR with `${{ github.sha }}` tag.
-      - Upload image tag as artifact.
-    - **Deploy**:
-      - Needs: Build.
-      - Checkout code.
-      - Set up Azure CLI, Azd, Docker.
-      - Download image tag artifact.
-  - Use OIDC for Azure login; least-privileged roles.
-  - Pin action versions; use stable actions.
-  - Use artifacts to pass image tag between jobs.
-  - Ensure idempotent deployment; no resource deletion on reapply.
+### 5) GitHub Actions (CI/CD) and setup secrets
+- Create **`.github/workflows/deploy.yml`** :
+- Setup infrastructure
+  - Login to Azure
+  - Create resource group
+  - Create secrets in key vault
+  - Use Bicep templates to provision Azure resources
+  - Database setup (seeding if necessary)
+  - setup secrets to allow access from application to database
+  - Verify deployment
+- Create Build and Deploy Stages with Steps to build and deploy the project. In Build stage:
+  - Checkout code
+  - Set up .NET
+  - Build and test
+  - Build Docker image
+  - Push image to ACR (if exists)
+- Push applications
+  - Deploy to Azure Container Apps
+  - Verify deployment
 
-### 6) Secrets & Config
-
-
-### 7) Documentation
-- Update **`/docs/4.setup-instructions.md`**:
-
-
-### 8) Commit, PR, Deploy, and Verify
+### 6) Commit, PR, Deploy, and Verify
 - Do not stop until the app is deployed, verified, and the PR is merged.
 - Create a branch `iac-setup` (or similar).
 - Commit changes:
@@ -102,7 +93,6 @@ mode: agent
   - `/docs/4.setup-instructions.md`
   - `/infra/*` (IaC templates: Bicep)
   - `/.github/workflows/deploy.yml`
-  - `/azure.yaml` (if using `azd`)
 - Remove any temporary files or artifacts not needed in the final commit.
 - Push the branch and open a PR to `main` with a concise description of the changes.
 - Review and merge the PR (self-approve if you are the only contributor).
@@ -122,8 +112,6 @@ mode: agent
   - Optionally add `/docs/5.issues.md` to record lessons learned and periodically refresh best practices using **@fetch**, **@context7**, and **@azure**.
 
 
----
-
 ## Decision Rules
 - Hosting: default **ACA** (single service → one app; multi → one per service).
 - DB selection: prefer **Azure SQL** for EF/relational; use **PostgreSQL** if Npgsql found; use **Cosmos DB** if SDK detected.
@@ -134,5 +122,5 @@ mode: agent
 - CI/CD: single workflow with build + deploy jobs; use artifacts to pass image tag.
 
 ## Execute
-- Perform steps 1→8 in order using @context7 @azure @githubrepo @github as specified. Don't Skip any steps and In the last step make sure you verify everything.
+- Perform steps 1→6 in order using @context7 @azure @githubrepo @github as specified. Don't Skip any steps and In the last step make sure you verify everything.
 - In the last step, ensure all resources are provisioned and the application is running as expected.

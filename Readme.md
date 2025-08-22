@@ -110,7 +110,8 @@ azd show --output table
 ```
 
 **Deployed Services:**
-- 🌐 **Web Application**: Your Container App URL (provided by azd)
+
+- 🌐 **Web Application**: Your Container App URL  
 - 🗄️ **Database**: Azure PostgreSQL Flexible Server with automatic backups
 - 🔐 **Security**: Key Vault with managed identity authentication  
 - 📊 **Monitoring**: Application Insights with custom telemetry
