@@ -27,6 +27,9 @@ provider "azurerm" {
       prevent_deletion_if_contains_resources = false
     }
   }
+  
+  # Use OIDC authentication for GitHub Actions
+  use_oidc = true
 }
 
 # Data source to get current Azure client configuration
