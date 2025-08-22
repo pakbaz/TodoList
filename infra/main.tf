@@ -193,7 +193,7 @@ module "todolist_app" {
   min_replicas = var.min_replicas
   max_replicas = var.max_replicas
   
-  http_scale_rule = {
+  http_scale_rules = {
     concurrent_requests = var.scale_concurrent_requests
   }
   
