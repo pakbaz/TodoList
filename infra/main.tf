@@ -163,7 +163,7 @@ module "container_apps_environment" {
   
   log_analytics_workspace_id = module.log_analytics.workspace_id
   infrastructure_subnet_id   = module.networking.container_apps_subnet_id
-  zone_redundancy_enabled   = var.enable_high_availability
+  enable_zone_redundancy     = var.enable_high_availability
 }
 
 # TodoList Container App
