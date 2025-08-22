@@ -1,228 +1,170 @@
+# Simplified Azure Infrastructure for TodoList Application
+# This version uses basic Terraform resources for compatibility and simplicity
+
 terraform {
-  required_version = ">= 1.9"
+  required_version = ">= 1.5"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 4.12"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
+      version = "~> 3.80"
     }
   }
-
+  
   backend "azurerm" {
-    # Backend configuration will be provided via terraform init command or environment variables
-    # See: https://developer.hashicorp.com/terraform/language/backend/azurerm
+    use_oidc = true
   }
 }
 
 provider "azurerm" {
-  features {
-    key_vault {
-      purge_soft_delete_on_destroy    = true
-      recover_soft_deleted_key_vaults = true
-    }
-    resource_group {
-      prevent_deletion_if_contains_resources = false
-    }
-  }
-  
-  # Use OIDC authentication for GitHub Actions
+  features {}
   use_oidc = true
 }
 
-# Data source to get current Azure client configuration
+# Data sources
 data "azurerm_client_config" "current" {}
 
-# Generate random suffix for unique resource naming
-resource "random_id" "suffix" {
-  byte_length = 4
-}
-
+# Local variables
 locals {
-  # Common naming convention
   name_prefix = "${var.app_name}-${var.environment}"
-  name_suffix = random_id.suffix.hex
-  
-  # Common tags applied to all resources
   common_tags = merge(var.tags, {
-    Application = var.app_name
-    Environment = var.environment
-    ManagedBy   = "Terraform"
-    CreatedBy   = "DevOps-Pipeline"
-    CreatedOn   = timestamp()
+    Environment   = var.environment
+    Application   = var.app_name
+    ManagedBy    = "terraform"
   })
 }
 
 # Resource Group
-module "resource_group" {
-  source = "./modules/resource-group"
-  
-  name     = "rg-${local.name_prefix}-${local.name_suffix}"
+resource "azurerm_resource_group" "main" {
+  name     = "rg-${local.name_prefix}-${var.location_short}"
   location = var.location
   tags     = local.common_tags
 }
 
-# Networking
-module "networking" {
-  source = "./modules/networking"
-  
-  resource_group_name = module.resource_group.name
-  location           = var.location
-  name_prefix        = local.name_prefix
-  name_suffix        = local.name_suffix
-  tags               = local.common_tags
-  
-  vnet_address_space = var.vnet_address_space
-  subnet_configs     = var.subnet_configs
+# Container Registry
+resource "azurerm_container_registry" "main" {
+  name                = "cr${replace(local.name_prefix, "-", "")}${var.location_short}"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  sku                 = var.acr_sku
+  admin_enabled       = false
+  tags                = local.common_tags
 }
 
 # Log Analytics Workspace
-module "log_analytics" {
-  source = "./modules/log-analytics"
-  
-  resource_group_name = module.resource_group.name
-  location           = var.location
-  name_prefix        = local.name_prefix
-  name_suffix        = local.name_suffix
-  tags               = local.common_tags
-  
-  sku               = var.log_analytics_sku
-  retention_in_days = var.log_analytics_retention_days
-}
-
-# Key Vault
-module "key_vault" {
-  source = "./modules/key-vault"
-  
-  app_name            = var.app_name
-  environment         = var.environment
-  location           = var.location
-  location_short     = var.location_short
-  resource_group_name = module.resource_group.name
-  tags               = local.common_tags
-  
-  private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
-  vnet_id                   = module.networking.vnet_id
-  soft_delete_retention_days = var.key_vault_soft_delete_retention_days
-}
-
-# Azure Container Registry
-module "container_registry" {
-  source = "./modules/container-registry"
-  
-  app_name            = var.app_name
-  environment         = var.environment
-  location           = var.location
-  location_short     = var.location_short
-  resource_group_name = module.resource_group.name
-  tags               = local.common_tags
-  
-  sku                        = var.acr_sku
-  admin_enabled              = false
-  private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
-  vnet_id                   = module.networking.vnet_id
-  georeplications           = var.georeplications
+resource "azurerm_log_analytics_workspace" "main" {
+  name                = "log-${local.name_prefix}-${var.location_short}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  sku                 = var.log_analytics_sku
+  retention_in_days   = var.log_analytics_retention_days
+  tags                = local.common_tags
 }
 
 # PostgreSQL Flexible Server
-module "postgresql" {
-  source = "./modules/postgresql"
+resource "azurerm_postgresql_flexible_server" "main" {
+  name                   = "psql-${local.name_prefix}-${var.location_short}"
+  resource_group_name    = azurerm_resource_group.main.name
+  location               = azurerm_resource_group.main.location
+  version                = var.postgresql_version
+  administrator_login    = var.db_admin_username
+  administrator_password = var.db_admin_password
+  zone                   = "1"
   
-  app_name            = var.app_name
-  environment         = var.environment
-  location           = var.location
-  location_short     = var.location_short
-  resource_group_name = module.resource_group.name
-  tags               = local.common_tags
-  
-  administrator_login        = var.db_admin_username
-  postgresql_version         = var.postgresql_version
-  sku_name                   = var.postgresql_sku
-  storage_mb                 = var.postgresql_storage_mb
-  
-  enable_high_availability   = var.enable_high_availability
-  high_availability_mode     = "ZoneRedundant"
-  standby_availability_zone  = var.standby_availability_zone
+  storage_mb   = var.postgresql_storage_mb
+  sku_name     = var.postgresql_sku
   
   backup_retention_days        = var.postgresql_backup_retention_days
   geo_redundant_backup_enabled = var.postgresql_geo_redundant_backup_enabled
+  
+  dynamic "high_availability" {
+    for_each = var.enable_high_availability ? [1] : []
+    content {
+      mode                      = "ZoneRedundant"
+      standby_availability_zone = var.standby_availability_zone
+    }
+  }
+  
+  tags = local.common_tags
+}
+
+# PostgreSQL Database
+resource "azurerm_postgresql_flexible_server_database" "main" {
+  name      = var.database_name
+  server_id = azurerm_postgresql_flexible_server.main.id
+  charset   = "UTF8"
+  collation = "en_US.utf8"
+}
+
+# PostgreSQL Firewall Rule (allow Azure services)
+resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
+  name             = "AllowAzureServices"
+  server_id        = azurerm_postgresql_flexible_server.main.id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "0.0.0.0"
 }
 
 # Container Apps Environment
-module "container_apps_environment" {
-  source = "./modules/container-apps-env"
-  
-  app_name            = var.app_name
-  environment         = var.environment
-  location           = var.location
-  location_short     = var.location_short
-  resource_group_name = module.resource_group.name
-  tags               = local.common_tags
-  
-  log_analytics_workspace_id = module.log_analytics.workspace_id
-  infrastructure_subnet_id   = module.networking.container_apps_subnet_id
-  enable_zone_redundancy     = var.enable_high_availability
+resource "azurerm_container_app_environment" "main" {
+  name                       = "cae-${local.name_prefix}-${var.location_short}"
+  location                   = azurerm_resource_group.main.location
+  resource_group_name        = azurerm_resource_group.main.name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+  tags                       = local.common_tags
 }
 
-# TodoList Container App
-module "todolist_app" {
-  source = "./modules/container-app"
-  
-  app_name                     = var.app_name
-  environment                  = var.environment
-  location_short              = var.location_short
-  resource_group_name         = module.resource_group.name
-  container_app_environment_id = module.container_apps_environment.id
-  
-  container_name   = "todolist-app"
-  container_image  = var.container_image
-  
-  # Environment variables
-  environment_variables = {
-    "ASPNETCORE_ENVIRONMENT" = title(var.environment)
-    "ASPNETCORE_URLS"       = "http://+:8080"
+# Container App
+resource "azurerm_container_app" "main" {
+  name                         = "ca-${local.name_prefix}-${var.location_short}"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+  tags                         = local.common_tags
+
+  identity {
+    type = "SystemAssigned"
   }
-  
-  # Resource allocation
-  container_cpu    = var.container_cpu_limit
-  container_memory = var.container_memory_limit
-  
-  # Scaling configuration
-  min_replicas = var.min_replicas
-  max_replicas = var.max_replicas
-  
-  http_scale_rules = {
-    concurrent_requests = var.scale_concurrent_requests
+
+  template {
+    container {
+      name   = "todolist-app"
+      image  = var.container_image
+      cpu    = var.container_cpu_limit
+      memory = var.container_memory_limit
+
+      env {
+        name  = "ASPNETCORE_ENVIRONMENT"
+        value = title(var.environment)
+      }
+      
+      env {
+        name  = "ASPNETCORE_URLS"
+        value = "http://+:8080"
+      }
+      
+      env {
+        name  = "ConnectionStrings__DefaultConnection"
+        value = "Host=${azurerm_postgresql_flexible_server.main.fqdn};Database=${azurerm_postgresql_flexible_server_database.main.name};Username=${var.db_admin_username};Password=${var.db_admin_password}"
+      }
+    }
+
+    min_replicas = var.min_replicas
+    max_replicas = var.max_replicas
   }
-  
-  tags = local.common_tags
-  
-  depends_on = [module.postgresql]
+
+  ingress {
+    external_enabled = true
+    target_port      = 8080
+    
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
 }
 
-# Store database connection string in Key Vault
-resource "azurerm_key_vault_secret" "db_connection_string" {
-  name         = "db-connection-string"
-  value        = module.postgresql.connection_string
-  key_vault_id = module.key_vault.id
-  
-  depends_on = [module.key_vault]
-  
-  tags = local.common_tags
-}
-
-# Create RBAC assignments for the container app to access Key Vault
-resource "azurerm_role_assignment" "app_key_vault_secrets_user" {
-  scope                = module.key_vault.id
-  role_definition_name = "Key Vault Secrets User"
-  principal_id         = module.todolist_app.identity_principal_id
-}
-
-# Create RBAC assignment for the container app to pull from ACR
-resource "azurerm_role_assignment" "app_acr_pull" {
-  scope                = module.container_registry.id
+# Role assignment for Container App to pull from ACR
+resource "azurerm_role_assignment" "acr_pull" {
+  scope                = azurerm_container_registry.main.id
   role_definition_name = "AcrPull"
-  principal_id         = module.todolist_app.identity_principal_id
+  principal_id         = azurerm_container_app.main.identity[0].principal_id
 }

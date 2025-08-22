@@ -149,6 +149,28 @@ variable "db_admin_username" {
   }
 }
 
+variable "db_admin_password" {
+  description = "Administrator password for PostgreSQL server"
+  type        = string
+  sensitive   = true
+  
+  validation {
+    condition     = length(var.db_admin_password) >= 8 && length(var.db_admin_password) <= 128
+    error_message = "Password must be between 8 and 128 characters long."
+  }
+}
+
+variable "database_name" {
+  description = "Name of the PostgreSQL database"
+  type        = string
+  default     = "todolistdb"
+  
+  validation {
+    condition     = can(regex("^[a-zA-Z][a-zA-Z0-9_]{2,62}$", var.database_name))
+    error_message = "Database name must start with a letter and be 3-63 characters long."
+  }
+}
+
 variable "postgresql_version" {
   description = "PostgreSQL server version"
   type        = string
