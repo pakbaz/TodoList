@@ -312,6 +312,7 @@ jobs:
             -var="enable_high_availability=${HA_ENABLED}" \
             -var="min_replicas=${MIN_REPLICAS}" \
             -var="max_replicas=${MAX_REPLICAS}" \
+            -var="db_admin_password=${{ secrets.DB_ADMIN_PASSWORD }}" \
             -out=tfplan \
             -detailed-exitcode
         continue-on-error: true
