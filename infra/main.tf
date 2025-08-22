@@ -103,10 +103,8 @@ module "key_vault" {
   resource_group_name = module.resource_group.name
   tags               = local.common_tags
   
-  tenant_id                  = data.azurerm_client_config.current.tenant_id
   private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
   vnet_id                   = module.networking.vnet_id
-  enable_rbac_authorization = true
   soft_delete_retention_days = var.key_vault_soft_delete_retention_days
 }
 
