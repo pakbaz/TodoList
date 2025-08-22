@@ -25,6 +25,12 @@ variable "location" {
   default     = "East US 2"
 }
 
+variable "location_short" {
+  description = "Short name for Azure region"
+  type        = string
+  default     = "eus2"
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources"
   type        = map(string)
@@ -121,16 +127,14 @@ variable "acr_sku" {
   }
 }
 
-variable "enable_geo_replication" {
-  description = "Enable geo-replication for Container Registry"
-  type        = bool
-  default     = false
-}
-
-variable "geo_replication_locations" {
-  description = "Additional locations for geo-replication"
-  type        = list(string)
-  default     = []
+variable "georeplications" {
+  description = "List of geo-replication configurations for Container Registry (Premium SKU only)"
+  type = list(object({
+    location                  = string
+    zone_redundancy_enabled   = bool
+    regional_endpoint_enabled = bool
+  }))
+  default = []
 }
 
 # PostgreSQL Variables

@@ -96,10 +96,11 @@ module "log_analytics" {
 module "key_vault" {
   source = "./modules/key-vault"
   
-  resource_group_name = module.resource_group.name
+  app_name            = var.app_name
+  environment         = var.environment
   location           = var.location
-  name_prefix        = local.name_prefix
-  name_suffix        = local.name_suffix
+  location_short     = var.location_short
+  resource_group_name = module.resource_group.name
   tags               = local.common_tags
   
   tenant_id                  = data.azurerm_client_config.current.tenant_id
@@ -113,73 +114,53 @@ module "key_vault" {
 module "container_registry" {
   source = "./modules/container-registry"
   
-  resource_group_name = module.resource_group.name
+  app_name            = var.app_name
+  environment         = var.environment
   location           = var.location
-  name_prefix        = local.name_prefix
-  name_suffix        = local.name_suffix
+  location_short     = var.location_short
+  resource_group_name = module.resource_group.name
   tags               = local.common_tags
   
   sku                        = var.acr_sku
   admin_enabled              = false
   private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
   vnet_id                   = module.networking.vnet_id
-  enable_geo_replication    = var.enable_geo_replication
-  geo_replication_locations = var.geo_replication_locations
+  georeplications           = var.georeplications
 }
 
 # PostgreSQL Flexible Server
 module "postgresql" {
   source = "./modules/postgresql"
   
-  resource_group_name = module.resource_group.name
+  app_name            = var.app_name
+  environment         = var.environment
   location           = var.location
-  name_prefix        = local.name_prefix
-  name_suffix        = local.name_suffix
+  location_short     = var.location_short
+  resource_group_name = module.resource_group.name
   tags               = local.common_tags
   
-  administrator_login         = var.db_admin_username
-  administrator_password_key  = "db-admin-password"
-  key_vault_id               = module.key_vault.id
-  server_version             = var.postgresql_version
+  administrator_login        = var.db_admin_username
+  postgresql_version         = var.postgresql_version
   sku_name                   = var.postgresql_sku
   storage_mb                 = var.postgresql_storage_mb
-  private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
-  vnet_id                   = module.networking.vnet_id
   
-  high_availability = var.enable_high_availability ? {
-    mode                      = "ZoneRedundant"
-    standby_availability_zone = var.standby_availability_zone
-  } : null
+  enable_high_availability   = var.enable_high_availability
+  high_availability_mode     = "ZoneRedundant"
+  standby_availability_zone  = var.standby_availability_zone
   
   backup_retention_days        = var.postgresql_backup_retention_days
   geo_redundant_backup_enabled = var.postgresql_geo_redundant_backup_enabled
-  
-  databases = {
-    todolistdb = {
-      name      = "todolistdb"
-      charset   = "UTF8"
-      collation = "en_US.utf8"
-    }
-  }
-  
-  diagnostic_settings = {
-    default = {
-      name                       = "diag-postgresql"
-      workspace_resource_id      = module.log_analytics.workspace_id
-      log_categories            = ["PostgreSQLLogs"]
-      metric_categories         = ["AllMetrics"]
-    }
-  }
 }
 
 # Container Apps Environment
 module "container_apps_environment" {
   source = "./modules/container-apps-env"
   
-  resource_group_name = module.resource_group.name
+  app_name            = var.app_name
+  environment         = var.environment
   location           = var.location
-  name_prefix        = local.name_prefix
-  name_suffix        = local.name_suffix
+  location_short     = var.location_short
+  resource_group_name = module.resource_group.name
   tags               = local.common_tags
   
   log_analytics_workspace_id = module.log_analytics.workspace_id
@@ -191,12 +172,14 @@ module "container_apps_environment" {
 module "todolist_app" {
   source = "./modules/container-app"
   
-  resource_group_name                   = module.resource_group.name
-  name                                 = "app-${local.name_prefix}"
-  container_app_environment_resource_id = module.container_apps_environment.id
+  app_name                     = var.app_name
+  environment                  = var.environment
+  location_short              = var.location_short
+  resource_group_name         = module.resource_group.name
+  container_app_environment_id = module.container_apps_environment.id
   
-  container_image = var.container_image
-  container_port  = 8080
+  container_name   = "todolist-app"
+  container_image  = var.container_image
   
   # Environment variables
   environment_variables = {
@@ -204,18 +187,9 @@ module "todolist_app" {
     "ASPNETCORE_URLS"       = "http://+:8080"
   }
   
-  # Secrets from Key Vault
-  secrets = {
-    "db-connection-string" = {
-      name                 = "db-connection-string"
-      key_vault_secret_url = "${module.key_vault.vault_uri}secrets/db-connection-string"
-      identity            = module.todolist_app.managed_identity_id
-    }
-  }
-  
   # Resource allocation
-  cpu_limit    = var.container_cpu_limit
-  memory_limit = var.container_memory_limit
+  container_cpu    = var.container_cpu_limit
+  container_memory = var.container_memory_limit
   
   # Scaling configuration
   min_replicas = var.min_replicas
@@ -223,36 +197,6 @@ module "todolist_app" {
   
   http_scale_rule = {
     concurrent_requests = var.scale_concurrent_requests
-  }
-  
-  # Ingress configuration
-  ingress = {
-    external_enabled           = true
-    target_port               = 8080
-    allow_insecure_connections = var.environment == "dev" ? true : false
-    traffic_weight = {
-      latest_revision = true
-      percentage      = 100
-    }
-  }
-  
-  # Health probes
-  liveness_probe = {
-    path                    = "/health"
-    port                   = 8080
-    initial_delay_seconds  = 30
-    period_seconds         = 30
-    timeout_seconds        = 5
-    failure_threshold      = 3
-  }
-  
-  readiness_probe = {
-    path                    = "/health/ready"
-    port                   = 8080
-    initial_delay_seconds  = 15
-    period_seconds         = 10
-    timeout_seconds        = 3
-    failure_threshold      = 3
   }
   
   tags = local.common_tags
@@ -275,12 +219,12 @@ resource "azurerm_key_vault_secret" "db_connection_string" {
 resource "azurerm_role_assignment" "app_key_vault_secrets_user" {
   scope                = module.key_vault.id
   role_definition_name = "Key Vault Secrets User"
-  principal_id         = module.todolist_app.managed_identity_principal_id
+  principal_id         = module.todolist_app.identity_principal_id
 }
 
 # Create RBAC assignment for the container app to pull from ACR
 resource "azurerm_role_assignment" "app_acr_pull" {
   scope                = module.container_registry.id
   role_definition_name = "AcrPull"
-  principal_id         = module.todolist_app.managed_identity_principal_id
+  principal_id         = module.todolist_app.identity_principal_id
 }
