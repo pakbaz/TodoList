@@ -250,22 +250,39 @@ jobs:
           az storage container create \
             --name "${CONTAINER_NAME}" \
             --account-name "${STORAGE_ACCOUNT}" \
+            --auth-mode login \
             --output none
           
           # Initialize Terraform with backend configuration
+          export ARM_USE_OIDC=true
+          export ARM_CLIENT_ID="${{ env.AZURE_CLIENT_ID }}"
+          export ARM_TENANT_ID="${{ env.AZURE_TENANT_ID }}"
+          export ARM_SUBSCRIPTION_ID="${{ env.AZURE_SUBSCRIPTION_ID }}"
+          
           terraform init \
             -backend-config="resource_group_name=${RESOURCE_GROUP}" \
             -backend-config="storage_account_name=${STORAGE_ACCOUNT}" \
             -backend-config="container_name=${CONTAINER_NAME}" \
-            -backend-config="key=${APP_NAME}-${ENV}.tfstate"
+            -backend-config="key=${APP_NAME}-${ENV}.tfstate" \
+            -backend-config="use_oidc=true"
 
       - name: Terraform Validate
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: ${{ env.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ env.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
         run: terraform validate
 
       - name: Terraform Plan
         id: plan
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: ${{ env.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ env.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
         run: |
           ENV="${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}"
           
@@ -357,6 +374,11 @@ jobs:
       - name: Terraform Apply
         id: deploy
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: ${{ env.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ env.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
         run: |
           echo "🚀 Applying Terraform plan..."
           terraform apply -auto-approve tfplan
