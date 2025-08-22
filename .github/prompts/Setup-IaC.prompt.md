@@ -62,6 +62,7 @@ mode: agent
 - Use Bicep parameter files for environment-specific configurations.
 - Implement Bicep outputs for cross-module references.
 - put everything under `/infra` directory. Put modules in `/infra/modules` and main Bicep file in `/infra/main.bicep`.
+- verify the Bicep templates for syntax and best practices.
 
 ### 5) GitHub Actions (CI/CD) and setup secrets
 - Create **`.github/workflows/deploy.yml`** :
