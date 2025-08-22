@@ -1,5 +1,7 @@
+targetScope = 'subscription'
+
 @description('The location for all resources')
-param location string = resourceGroup().location
+param location string = 'eastus2'
 
 @description('The environment name (dev, staging, prod)')
 @allowed(['dev', 'staging', 'prod'])
@@ -28,20 +30,19 @@ var commonTags = {
   Project: 'TodoList'
 }
 
-// Resource Group module (just for standardization)
-module resourceGroupModule 'modules/resource-group.bicep' = {
-  name: 'resource-group-deployment'
-  params: {
-    location: location
-    environmentName: environmentName
-    applicationName: applicationName
-    tags: commonTags
-  }
+// Create Resource Group at subscription scope
+var resourceGroupName = 'rg-${applicationName}-${environmentName}'
+
+resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
+  name: resourceGroupName
+  location: location
+  tags: commonTags
 }
 
 // Log Analytics Workspace
 module logAnalyticsModule 'modules/log-analytics.bicep' = {
   name: 'log-analytics-deployment'
+  scope: resourceGroup
   params: {
     location: location
     environmentName: environmentName
@@ -55,6 +56,7 @@ module logAnalyticsModule 'modules/log-analytics.bicep' = {
 // Application Insights
 module applicationInsightsModule 'modules/application-insights.bicep' = {
   name: 'application-insights-deployment'
+  scope: resourceGroup
   params: {
     location: location
     environmentName: environmentName
@@ -68,6 +70,7 @@ module applicationInsightsModule 'modules/application-insights.bicep' = {
 // Key Vault
 module keyVaultModule 'modules/key-vault.bicep' = {
   name: 'key-vault-deployment'
+  scope: resourceGroup
   params: {
     location: location
     environmentName: environmentName
@@ -82,6 +85,7 @@ module keyVaultModule 'modules/key-vault.bicep' = {
 // Container Registry
 module containerRegistryModule 'modules/container-registry.bicep' = {
   name: 'container-registry-deployment'
+  scope: resourceGroup
   params: {
     location: location
     environmentName: environmentName
@@ -95,6 +99,7 @@ module containerRegistryModule 'modules/container-registry.bicep' = {
 // PostgreSQL Flexible Server
 module postgresModule 'modules/postgresql.bicep' = {
   name: 'postgresql-deployment'
+  scope: resourceGroup
   params: {
     location: location
     environmentName: environmentName
@@ -114,6 +119,7 @@ module postgresModule 'modules/postgresql.bicep' = {
 // Container Apps Environment
 module containerAppsEnvironmentModule 'modules/container-apps-environment.bicep' = {
   name: 'container-apps-environment-deployment'
+  scope: resourceGroup
   params: {
     location: location
     environmentName: environmentName
@@ -126,7 +132,7 @@ module containerAppsEnvironmentModule 'modules/container-apps-environment.bicep'
 }
 
 // Outputs
-output resourceGroupName string = resourceGroup().name
+output resourceGroupName string = resourceGroup.name
 output containerRegistryLoginServer string = containerRegistryModule.outputs.loginServer
 output containerRegistryName string = containerRegistryModule.outputs.registryName
 output keyVaultName string = keyVaultModule.outputs.keyVaultName

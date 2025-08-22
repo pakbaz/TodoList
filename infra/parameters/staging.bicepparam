@@ -1,5 +1,6 @@
 using '../main.bicep'
 
+param location = 'eastus2'
 param environmentName = 'staging'
 param applicationName = 'todolist'
 param postgresAdminLogin = 'todolistadmin'
