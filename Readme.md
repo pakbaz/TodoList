@@ -1,9 +1,11 @@
-# TodoList - Modern .NET Blazor Application
+# TodoList - Modern .NET Blazor Application with Azure Cloud Deployment
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![.NET 9](https://img.shields.io/badge/.NET-9.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/9.0)
+[![Azure Container Apps](https://img.shields.io/badge/Azure-Container%20Apps-blue.svg)](https://azure.microsoft.com/products/container-apps)
+[![CI/CD](https://github.com/pakbaz/TodoList/actions/workflows/azure-dev.yml/badge.svg)](https://github.com/pakbaz/TodoList/actions/workflows/azure-dev.yml)
 
-A modern TodoList application built with .NET 9 Blazor Server and PostgreSQL. Features clean architecture with MCP (Model Context Protocol) integration for AI tool compatibility.
+A modern TodoList application built with .NET 9 Blazor Server and PostgreSQL, featuring enterprise-grade Infrastructure as Code (IaC) and CI/CD pipeline deployment to Azure Container Apps.
 
 ## 🚀 Features
 
@@ -14,6 +16,14 @@ A modern TodoList application built with .NET 9 Blazor Server and PostgreSQL. Fe
 - **MCP Protocol Support**: Full AI assistant integration with JSON-RPC 2.0
 - **RESTful API**: Clean HTTP endpoints for external integrations
 - **Health Monitoring**: Comprehensive health checks with detailed status reporting
+
+### Cloud & DevOps
+
+- **Azure Container Apps**: Serverless container hosting with auto-scaling
+- **Infrastructure as Code**: Bicep templates with Azure Verified Modules
+- **CI/CD Pipeline**: GitHub Actions with OIDC authentication and multi-environment deployment
+- **Security**: Zero-secret architecture with managed identity and Key Vault integration
+- **Monitoring**: Application Insights with custom telemetry and observability
 
 ### Developer Experience
 
@@ -26,39 +36,95 @@ A modern TodoList application built with .NET 9 Blazor Server and PostgreSQL. Fe
 
 ```mermaid
 graph TB
-    subgraph "Client Layer"
-        UI[Blazor Server UI]
-        API[REST API]
-        MCP[MCP Protocol]
+    subgraph "Azure Cloud"
+        subgraph "Container Apps Environment"
+            APP[TodoList Container App]
+        end
+        
+        subgraph "Data & Security"
+            PG[(PostgreSQL Flexible Server)]
+            KV[Key Vault]
+            ACR[Container Registry]
+        end
+        
+        subgraph "Monitoring"
+            AI[Application Insights]
+            MON[Azure Monitor]
+        end
+    end
+    
+    subgraph "CI/CD Pipeline"
+        GH[GitHub Actions]
+        OIDC[OIDC Authentication]
     end
     
     subgraph "Application Layer"
+        UI[Blazor Server UI]
+        API[REST API]
+        MCP[MCP Protocol]
         SVC[TodoListService]
-        CTX[TodoDbContext]
     end
     
-    subgraph "Data Layer"
-        PG[(PostgreSQL)]
-        LT[(SQLite Fallback)]
-    end
+    GH --> |Deploy| APP
+    OIDC --> |Secure Auth| GH
+    APP --> |Connection String| KV
+    APP --> |Data| PG
+    APP --> |Telemetry| AI
+    ACR --> |Images| APP
     
     UI --> SVC
     API --> SVC
     MCP --> SVC
-    SVC --> CTX
-    CTX --> PG
-    CTX -.-> LT
+    SVC --> PG
 ```
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Azure Cloud Deployment (Recommended)
+
+This application is configured for enterprise-grade deployment to Azure Container Apps with full Infrastructure as Code and CI/CD pipeline.
+
+```bash
+# Prerequisites: Azure CLI and GitHub account
+
+# 1. Fork this repository to your GitHub account
+# 2. Clone your fork locally
+git clone https://github.com/YOUR_USERNAME/TodoList.git
+cd TodoList
+
+# 3. Initialize Azure Developer CLI
+azd auth login
+azd init
+
+# 4. Deploy infrastructure and application
+azd up
+
+# The deployment will:
+# ✅ Provision Azure Container Apps, PostgreSQL, Key Vault, and monitoring
+# ✅ Build and deploy the containerized application
+# ✅ Configure secure networking and managed identity authentication
+# ✅ Set up CI/CD pipeline with GitHub Actions and OIDC
+
+# 5. Access your deployed application
+azd show --output table
+```
+
+**Deployed Services:**
+- 🌐 **Web Application**: Your Container App URL (provided by azd)
+- 🗄️ **Database**: Azure PostgreSQL Flexible Server with automatic backups
+- 🔐 **Security**: Key Vault with managed identity authentication  
+- 📊 **Monitoring**: Application Insights with custom telemetry
+- 🚀 **CI/CD**: GitHub Actions with multi-environment deployment
+
+### Local Development
+
+#### Prerequisites
 
 - **.NET 9 SDK** - [Download here](https://dotnet.microsoft.com/download/dotnet/9.0)
 - **Docker** (optional) - [Download here](https://docs.docker.com/get-docker/)
 - **PostgreSQL** (optional for local dev) - [Download here](https://www.postgresql.org/download/)
 
-### Option 1: Docker Compose (Recommended)
+#### Option 1: Docker Compose (Recommended)
 
 ```bash
 # Clone the repository
