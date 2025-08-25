@@ -16,12 +16,13 @@ mode: agent
 
 
 ## Tools
-- **@githubrepo** — create/update/commit files.
-- **@github** — manage repo/environment secrets; run checks.
-- **@azure** — query/subscriptions/RGs, validate/deploy Bicep, ACA ops.
-- **@context7** and **@azure** — fetch latest best practices (summarize, no links).
-- **@microsoft-docs** — query Microsoft Docs for specific guidance.
-- **@fetch** — retrieve code snippets and examples.
+- **githubrepo** — create/update/commit files.
+- **github** — manage repo/environment secrets; run checks.
+- **azure** — query/subscriptions/RGs, validate/deploy Bicep, ACA ops.
+- **context7** — fetch latest best practices (summarize, no links).
+- **microsoft-docs** — query Microsoft Docs for specific guidance.
+- **fetch** — retrieve code snippets and examples.
+- **think** - think about the problem and potential solutions.
 ---
 
 ## Flow
@@ -30,36 +31,38 @@ mode: agent
 - Scan for **`/docs/1.architecture.md`**. if the file exist, skip this step
 - Scan repo for: ASP.NET Core projects, Dockerfile, docker-compose, database usage, static assets, tests and README.md to understand project structure and architecture.
 - Infer architecture: single service vs multi-service. Prefer one container per service; single container for monolith. Deploy database as a separate service.
+- use think to thoroughly analyze the repo structure and dependencies and come up with a comprehensive understanding of the application and architecture.
 - Put everything into **`/docs/1.architecture.md`**. and go to next step in the flow.
 
 ### 2) Best Practices and Implementation plan Doc
 - Scan for **`/docs/2.implementation-plan.md`** . if the file exist, skip this step
 - Read  **`/docs/1.architecture.md`** for the context of the research.
-- Use **@context7** , **@azure** and **@microsoft-docs** to collect current guidance for AKS, ACA, ACR, Key Vault, Monitoring in Azure, GitHub Actions and Database options in Azure as well as other Infrastructure as Code best practices.
-- Come up with Infrastructure as Code and CI/CDDeployment Implementation Plan:
-  - Target Azure resources.
+- Use **context7** , **azure** and **microsoft-docs** to collect current guidance for AKS, ACA, ACR, Key Vault, Monitoring in Azure, GitHub Actions and Database options in Azure as well as other Infrastructure as Code best practices.
+- Use **think** and come up with Infrastructure as Code and CI/CDDeployment Implementation Plan. make sure check that it is based on latest documentation, accurate and complete:
+  - Come up with a detailed plan for implementing Infrastructure as Code using Bicep.
+  - Target Azure resources: ACR, AKS, Database services like Azure SQL or Cosmos DB or Azure PostgreSQL.
   - Define resource dependencies and order of operations.
-  - CI/CD jobs, triggers, environments.
+  - Add additional complementary plan for creating CI/CD jobs, triggers, environments.
   - Secret strategy (Use Azure Key Vault if possible).
-  - Verify/rollback approach.
   - Make sure the deployment is idempotent and don't delete existing resources if redeployed.
   - Use Bicep Modular Templates for reusable components.
   - Implement parameterized templates for environment-specific configurations.
-  - Write concise summary (no links) to **`/docs/2.implementation-plan.md`**.
-
-- double check the implementation plan for completeness and accuracy.
+  - Write summary (no links) to **`/docs/2.implementation-plan.md`**.
 
 ### 3) Generate Infrastructure using Azure Bicep
 - Scan for **`/infra`** directory. If it exists, skip this step.
 - Use `/docs/2.implementation-plan.md` as a guide to create Bicep templates for the infrastructure.
-- Implement Bicep modules for reusable components.
+- Think very carefully to Implement accurate and error free Bicep modules for reusable components.
 - Use Bicep parameter files for environment-specific configurations.
 - Implement Bicep outputs for cross-module references.
 - put everything under `/infra` directory. Put modules in `/infra/modules` and main Bicep file in `/infra/main.bicep`.
 - verify and validate the Bicep templates for syntax and best practices.
+- Use **azure** to validate the Bicep templates for syntax and best practices.
+- 
 
 ### 4) GitHub Actions (CI/CD) and setup secrets
-- Create **`.github/workflows/deploy.yml`** :
+- Use context7 and github to get the latest information on creating GitHub Actions workflows.
+- Use think to Create **`.github/workflows/deploy.yml`** :
 - make sure for the first time infrastructure is provisioned before application deployment.
 - create a job for infrastructure deployment using Bicep
 - use `az deployment group create` command to deploy the Bicep template.
@@ -78,8 +81,8 @@ mode: agent
 - Push the branch and open a PR to `main` with a concise description of the changes.
 - Review and merge the PR (self-approve if you are the only contributor).
 - After merge, deployment should start automatically:
-  - Use **@github** to monitor the workflow run and logs until completion.
-  - Use **@azure** to verify resource provisioning and application health.
+  - Use **github** to monitor the workflow run and logs until completion.
+  - Use **azure** to verify resource provisioning and application health.
 - Verification checklist (adapt based on your architecture; mark N/A where not used):
   - Azure resources exist: RG, VNet (if used), ACR, Key Vault (if used), DB (PostgreSQL/SQL/Cosmos), ACA/AKS.
   - App is running in ACA/AKS; external ingress URL is reachable (HTTP 200/OK).
@@ -90,7 +93,7 @@ mode: agent
   - Fix forward with small commits on the same branch and re-run the workflow.
 - When fully verified:
   - Tag the commit (e.g., `iac-setup-complete`).
-  - Optionally add `/docs/5.issues.md` to record lessons learned and periodically refresh best practices using **@fetch**, **@context7**, and **@azure**.
+  - Optionally add `/docs/5.issues.md` to record lessons learned and periodically refresh best practices using **fetch**, **context7**, and **azure**.
 - Do not stop until the app is deployed, verified, and the PR is merged.
 - verification: ensure all resources are provisioned and the application is running as expected.
 - iteration: incorporate feedback and make necessary adjustments.
@@ -105,5 +108,5 @@ mode: agent
 - CI/CD: single workflow with build + deploy jobs; use artifacts to pass image tag.
 
 ## Execute
-- Perform steps 1→5 in order using @context7 @azure @githubrepo @github as specified. Don't Skip any steps and In the last step make sure you verify everything.
+- Perform steps 1→5 in order using context7 azure githubrepo github and think as specified. Don't Skip any steps and In the last step make sure you verify everything.
 - In the last step, ensure all resources are provisioned and the application is running as expected.

@@ -1,243 +1,151 @@
-name: Deploy TodoList Application
+name: Build and Deploy to Azure (ACA)
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
+      resourceGroup:
+        description: 'Azure Resource Group'
+        required: true
+        default: 'todolist-dev-rg'
+      location:
+        description: 'Azure Location'
+        required: true
+        default: 'eastus'
       environment:
-        description: 'Environment to deploy to'
+        description: 'Environment name (dev/test/prod)'
         required: true
         default: 'dev'
-        type: choice
-        options:
-        - dev
-        - staging
-        - prod
-
-env:
-  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-  REGISTRY_NAME: 'todolistregistry'
-  IMAGE_NAME: 'todolist'
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 permissions:
   id-token: write
   contents: read
-  pull-requests: write
+
+env:
+  IMAGE_NAME: todolist
 
 jobs:
-  lint-and-test:
-    name: Lint and Test
+  infra:
+    name: Provision Infra (Bicep)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
         with:
-          dotnet-version: '9.0.x'
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Restore dependencies
-        run: dotnet restore
-
-      - name: Build application
-        run: dotnet build --no-restore --configuration Release
-
-      - name: Run tests
-        run: dotnet test --no-build --configuration Release --verbosity normal
-
-      - name: Lint Bicep templates
+      - name: Ensure Resource Group
         run: |
-          # Install Bicep CLI
-          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
-          chmod +x ./bicep
-          sudo mv ./bicep /usr/local/bin/bicep
-          
-          # Lint all Bicep files
-          bicep build infra/main.bicep
-          bicep build infra/deploy-app.bicep
-          find infra/modules -name "*.bicep" -exec bicep build {} \;
+          az group create -n "${{ github.event.inputs.resourceGroup || 'todolist-dev-rg' }}" -l "${{ github.event.inputs.location || 'eastus' }}"
 
-  infrastructure:
-    name: Deploy Infrastructure
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    needs: lint-and-test
-    strategy:
-      matrix:
-        environment: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', github.event.inputs.environment)) || fromJson('["dev"]') }}
-    environment: ${{ matrix.environment }}
+      - name: Deploy Infra (Bicep)
+        id: deploy
+        run: |
+          RG="${{ github.event.inputs.resourceGroup || 'todolist-dev-rg' }}"
+          ENVNAME="${{ github.event.inputs.environment || 'dev' }}"
+          IMAGE_TAG="${{ github.sha }}"
+          az deployment group create \
+            -g "$RG" \
+            -f infra/main.bicep \
+            -p namePrefix=todolist environment="$ENVNAME" imageTag="$IMAGE_TAG" \
+               pgAdminUser="${{ secrets.PG_ADMIN_USER }}" pgAdminPassword="${{ secrets.PG_ADMIN_PASSWORD }}" \
+            --query "properties.outputs" --output json > deploy-outputs.json
+          cat deploy-outputs.json
+
+      - name: Set outputs
+        id: setouts
+        run: |
+          echo "acr=$(jq -r .acrLoginServer.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+          echo "acrName=$(jq -r .acrName.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+          echo "app=$(jq -r .containerAppName.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+          echo "fqdn=$(jq -r .containerAppFqdn.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+          echo "kv=$(jq -r .keyVaultName.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+          echo "kvId=$(jq -r .keyVaultId.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+          echo "pg=$(jq -r .postgresFqdn.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+
+      - name: Compose Postgres Connection String and upsert KV secret
+        run: |
+          RG="${{ github.event.inputs.resourceGroup || 'todolist-dev-rg' }}"
+          KV="${{ steps.setouts.outputs.kv }}"
+          PGHOST="${{ steps.setouts.outputs.pg }}"
+          PGUSER="${{ secrets.PG_ADMIN_USER }}"
+          PGPASS="${{ secrets.PG_ADMIN_PASSWORD }}"
+          DBNAME="todolistdb"
+          CONNSTR="Host=$PGHOST;Database=$DBNAME;Username=$PGUSER;Password=$PGPASS;Include Error Detail=true"
+          az keyvault secret set --vault-name "$KV" --name "DefaultConnection" --value "$CONNSTR"
+
+      - name: Output infra values
+        run: |
+          echo "ACR: ${{ steps.setouts.outputs.acr }}"
+          echo "App: ${{ steps.setouts.outputs.app }}"
+          echo "FQDN: https://${{ steps.setouts.outputs.fqdn }}"
     outputs:
-      resource-group-name: ${{ steps.infrastructure.outputs.resourceGroupName }}
-      container-registry-login-server: ${{ steps.infrastructure.outputs.containerRegistryLoginServer }}
-      container-registry-name: ${{ steps.infrastructure.outputs.containerRegistryName }}
-      container-app-environment-id: ${{ steps.infrastructure.outputs.containerAppEnvironmentId }}
-      key-vault-name: ${{ steps.infrastructure.outputs.keyVaultName }}
-      key-vault-uri: ${{ steps.infrastructure.outputs.keyVaultUri }}
-      application-insights-connection-string: ${{ steps.infrastructure.outputs.applicationInsightsConnectionString }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      acr: ${{ steps.setouts.outputs.acr }}
+      acrName: ${{ steps.setouts.outputs.acrName }}
+      app: ${{ steps.setouts.outputs.app }}
+      fqdn: ${{ steps.setouts.outputs.fqdn }}
 
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Deploy Infrastructure
-        id: infrastructure
-        uses: azure/arm-deploy@v1
-        with:
-          subscriptionId: ${{ env.AZURE_SUBSCRIPTION_ID }}
-          scope: subscription
-          region: East US 2
-          template: infra/main.bicep
-          parameters: >
-            location=eastus2
-            environmentName=${{ matrix.environment }}
-            applicationName=todolist
-            postgresAdminLogin=todolistadmin
-            postgresAdminPassword=${{ secrets.POSTGRES_ADMIN_PASSWORD }}
-            deploymentPrincipalId=${{ env.AZURE_CLIENT_ID }}
-          deploymentName: 'infrastructure-${{ matrix.environment }}-${{ github.run_number }}'
-
-  build-and-push:
-    name: Build and Push Container
+  build_push:
+    name: Build and Push Image
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    needs: [lint-and-test, infrastructure]
-    strategy:
-      matrix:
-        environment: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', github.event.inputs.environment)) || fromJson('["dev"]') }}
-    environment: ${{ matrix.environment }}
+    needs: [infra]
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v1
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and push container image
+      - name: ACR Login
         run: |
-          # Login to Azure Container Registry
-          az acr login --name ${{ needs.infrastructure.outputs.container-registry-name }}
-          
-          # Build and tag the image
-          docker build -t ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-          docker tag ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:latest
-          
-          # Push the image
-          docker push ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker push ${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:latest
+          az acr login --name "${{ needs.infra.outputs.acrName }}"
 
-  deploy-application:
-    name: Deploy Application
+      - name: Build and Push
+        run: |
+          ACR=${{ needs.infra.outputs.acr }}
+          IMAGE=${ACR}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+  app_deploy:
+    name: Update Container App
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    needs: [infrastructure, build-and-push]
-    strategy:
-      matrix:
-        environment: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', github.event.inputs.environment)) || fromJson('["dev"]') }}
-    environment: ${{ matrix.environment }}
+    needs: [infra, build_push]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v1
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy Container App
-        uses: azure/arm-deploy@v1
-        with:
-          subscriptionId: ${{ env.AZURE_SUBSCRIPTION_ID }}
-          resourceGroupName: ${{ needs.infrastructure.outputs.resource-group-name }}
-          template: infra/deploy-app.bicep
-          parameters: >
-            environmentName=${{ matrix.environment }}
-            applicationName=todolist
-            containerAppEnvironmentId=${{ needs.infrastructure.outputs.container-app-environment-id }}
-            containerRegistryLoginServer=${{ needs.infrastructure.outputs.container-registry-login-server }}
-            containerRegistryName=${{ needs.infrastructure.outputs.container-registry-name }}
-            containerImage=${{ needs.infrastructure.outputs.container-registry-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            keyVaultName=${{ needs.infrastructure.outputs.key-vault-name }}
-            keyVaultUri=${{ needs.infrastructure.outputs.key-vault-uri }}
-            applicationInsightsConnectionString=${{ needs.infrastructure.outputs.application-insights-connection-string }}
-          deploymentName: 'app-deployment-${{ matrix.environment }}-${{ github.run_number }}'
-
-  smoke-tests:
-    name: Smoke Tests
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    needs: deploy-application
-    strategy:
-      matrix:
-        environment: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', github.event.inputs.environment)) || fromJson('["dev"]') }}
-    environment: ${{ matrix.environment }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Get Container App URL
-        id: get-url
+      - name: Update image
         run: |
-          APP_URL=$(az containerapp show \
-            --name todolist-${{ matrix.environment }} \
-            --resource-group rg-todolist-${{ matrix.environment }} \
-            --query "properties.configuration.ingress.fqdn" \
-            --output tsv)
-          echo "app-url=https://$APP_URL" >> $GITHUB_OUTPUT
+          IMAGE=${{ needs.infra.outputs.acr }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          az containerapp update \
+            -n "${{ needs.infra.outputs.app }}" \
+            -g "${{ github.event.inputs.resourceGroup || 'todolist-dev-rg' }}" \
+            --image "$IMAGE"
 
-      - name: Wait for application to be ready
+      - name: Health check
         run: |
-          echo "Waiting for application to be ready at ${{ steps.get-url.outputs.app-url }}"
-          for i in {1..30}; do
-            if curl -f -s "${{ steps.get-url.outputs.app-url }}" > /dev/null; then
-              echo "Application is ready!"
-              exit 0
-            fi
-            echo "Attempt $i failed, waiting 10 seconds..."
+          FQDN=${{ needs.infra.outputs.fqdn }}
+          echo "Probing https://$FQDN/health"
+          for i in {1..20}; do
+            if curl -fsS "https://$FQDN/health"; then exit 0; fi
             sleep 10
           done
-          echo "Application failed to become ready"
+          echo "App not healthy in time" >&2
           exit 1
-
-      - name: Run smoke tests
-        run: |
-          echo "Running basic health checks..."
-          
-          # Test home page
-          curl -f -s "${{ steps.get-url.outputs.app-url }}" | grep -q "TodoList" || {
-            echo "Home page test failed"
-            exit 1
-          }
-          
-          # Test todo page
-          curl -f -s "${{ steps.get-url.outputs.app-url }}/todo" > /dev/null || {
-            echo "Todo page test failed"
-            exit 1
-          }
-          
-          echo "All smoke tests passed!"
-          echo "Application URL: ${{ steps.get-url.outputs.app-url }}"
