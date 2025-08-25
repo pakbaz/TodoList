@@ -25,6 +25,9 @@ param registryServer string
 @description('Key Vault resource id for secret references')
 param keyVaultId string
 
+@description('Optional Application Insights connection string for SDK autocollection')
+param appInsightsConnectionString string = ''
+
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
   location: location
@@ -71,6 +74,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'ASPNETCORE_URLS'
               value: 'http://+:8080'
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsightsConnectionString
             }
             {
               name: 'ConnectionStrings__DefaultConnection'

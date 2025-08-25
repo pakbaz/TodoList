@@ -111,6 +111,7 @@ module containerApp 'modules/containerapp.bicep' = {
     registryServer: acr.outputs.loginServer
     // Note: username/password not needed if using managed identity and ACR RBAC pull
     keyVaultId: keyvault.outputs.vaultId
+  appInsightsConnectionString: appInsights.outputs.connectionString
   }
 }
 
