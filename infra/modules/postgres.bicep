@@ -52,8 +52,8 @@ resource firewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-
   name: 'AllowAllAzureIps'
   parent: server
   properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '255.255.255.255'
+  startIpAddress: '0.0.0.0'
+  endIpAddress: '0.0.0.0'
   }
 }
 
