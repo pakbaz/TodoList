@@ -1,147 +1,155 @@
-targetScope = 'subscription'
+@description('Azure region for all resources')
+param location string = resourceGroup().location
 
-@description('The location for all resources')
-param location string = 'eastus2'
+@description('Prefix used for resource names')
+param namePrefix string = 'todolist'
 
-@description('The environment name (dev, staging, prod)')
-@allowed(['dev', 'staging', 'prod'])
-param environmentName string
+@description('Environment name (dev/test/prod)')
+param environment string = 'dev'
 
-@description('The application name')
-@minLength(2)
-@maxLength(20)
-param applicationName string = 'todolist'
+@description('Container image tag to deploy (e.g. commit SHA)')
+param imageTag string = 'latest'
 
-@description('PostgreSQL administrator login')
-param postgresAdminLogin string = 'todolistadmin'
-
-@description('PostgreSQL administrator password')
+@description('PostgreSQL admin username (no @)')
 @secure()
-param postgresAdminPassword string
+param pgAdminUser string
 
-@description('Object ID of the deployment principal')
-param deploymentPrincipalId string
+@description('PostgreSQL admin password')
+@secure()
+param pgAdminPassword string
 
-// Common tags for all resources
-var commonTags = {
-  Environment: environmentName
-  Application: applicationName
-  ManagedBy: 'Infrastructure as Code'
-  Project: 'TodoList'
-}
+@description('App insights app type')
+param appInsightsType string = 'web'
 
-// Create Resource Group at subscription scope
-var resourceGroupName = 'rg-${applicationName}-${environmentName}'
+@description('Container app cpu cores')
+param appCpu int = 1
 
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
-  name: resourceGroupName
-  location: location
-  tags: commonTags
-}
+@description('Container app memory in GiB')
+param appMemory string = '1Gi'
 
-// Log Analytics Workspace
-module logAnalyticsModule 'modules/log-analytics.bicep' = {
-  name: 'log-analytics-deployment'
-  scope: resourceGroup
+var acrName = '${namePrefix}${uniqueString(resourceGroup().id)}acr'
+var kvName = '${namePrefix}-${environment}-kv'
+var pgName = '${namePrefix}-${environment}-pg'
+var logName = '${namePrefix}-${environment}-log'
+var appInsightsName = '${namePrefix}-${environment}-ai'
+var caEnvName = '${namePrefix}-${environment}-cae'
+var appName = '${namePrefix}-${environment}-app'
+var imageName = 'todolist'
+
+// Log Analytics
+module logAnalytics 'modules/loganalytics.bicep' = {
+  name: 'logAnalytics'
   params: {
     location: location
-    environmentName: environmentName
-    applicationName: applicationName
-    tags: commonTags
-    retentionInDays: environmentName == 'prod' ? 90 : 30
-    sku: 'PerGB2018'
+    name: logName
   }
 }
 
-// Application Insights
-module applicationInsightsModule 'modules/application-insights.bicep' = {
-  name: 'application-insights-deployment'
-  scope: resourceGroup
+// App Insights
+module appInsights 'modules/appinsights.bicep' = {
+  name: 'appInsights'
   params: {
     location: location
-    environmentName: environmentName
-    applicationName: applicationName
-    tags: commonTags
-    logAnalyticsWorkspaceId: logAnalyticsModule.outputs.workspaceId
-    applicationType: 'web'
+    name: appInsightsName
+    workspaceId: logAnalytics.outputs.workspaceId
+    appType: appInsightsType
+  }
+}
+
+// ACR
+module acr 'modules/acr.bicep' = {
+  name: 'acr'
+  params: {
+    location: location
+    name: acrName
   }
 }
 
 // Key Vault
-module keyVaultModule 'modules/key-vault.bicep' = {
-  name: 'key-vault-deployment'
-  scope: resourceGroup
+module keyvault 'modules/keyvault.bicep' = {
+  name: 'keyvault'
   params: {
     location: location
-    environmentName: environmentName
-    applicationName: applicationName
-    tags: commonTags
-    deploymentPrincipalId: deploymentPrincipalId
-    skuName: environmentName == 'prod' ? 'premium' : 'standard'
-    softDeleteRetentionInDays: environmentName == 'prod' ? 30 : 7
-  }
-}
-
-// Container Registry
-module containerRegistryModule 'modules/container-registry.bicep' = {
-  name: 'container-registry-deployment'
-  scope: resourceGroup
-  params: {
-    location: location
-    environmentName: environmentName
-    applicationName: applicationName
-    tags: commonTags
-    sku: environmentName == 'prod' ? 'Standard' : 'Basic'
-    adminUserEnabled: false
+    name: kvName
+    enableRbac: true
   }
 }
 
 // PostgreSQL Flexible Server
-module postgresModule 'modules/postgresql.bicep' = {
-  name: 'postgresql-deployment'
-  scope: resourceGroup
+module postgres 'modules/postgres.bicep' = {
+  name: 'postgres'
   params: {
     location: location
-    environmentName: environmentName
-    applicationName: applicationName
-    tags: commonTags
-    administratorLogin: postgresAdminLogin
-    administratorPassword: postgresAdminPassword
-    skuName: environmentName == 'prod' ? 'Standard_B2s' : 'Standard_B1ms'
-    storageSizeGB: environmentName == 'prod' ? 128 : 32
-    enableHighAvailability: environmentName == 'prod'
-    backupRetentionDays: environmentName == 'prod' ? 14 : 7
-    keyVaultId: keyVaultModule.outputs.keyVaultId
-    databaseName: 'todolistdb'
+    name: pgName
+    adminUser: pgAdminUser
+  adminPassword: pgAdminPassword
+  databaseName: 'todolistdb'
   }
 }
 
-// Container Apps Environment
-module containerAppsEnvironmentModule 'modules/container-apps-environment.bicep' = {
-  name: 'container-apps-environment-deployment'
-  scope: resourceGroup
+// ACA Environment
+module acaEnv 'modules/aca-environment.bicep' = {
+  name: 'acaEnvironment'
   params: {
     location: location
-    environmentName: environmentName
-    applicationName: applicationName
-    tags: commonTags
-    logAnalyticsWorkspaceId: logAnalyticsModule.outputs.workspaceId
-    logAnalyticsWorkspaceKey: logAnalyticsModule.outputs.primarySharedKey
-    enableWorkloadProfiles: false
+    name: caEnvName
+    workspaceId: logAnalytics.outputs.workspaceId
   }
 }
 
-// Outputs
-output resourceGroupName string = resourceGroup.name
-output containerRegistryLoginServer string = containerRegistryModule.outputs.loginServer
-output containerRegistryName string = containerRegistryModule.outputs.registryName
-output keyVaultName string = keyVaultModule.outputs.keyVaultName
-output keyVaultUri string = keyVaultModule.outputs.keyVaultUri
-output postgresServerName string = postgresModule.outputs.serverName
-output postgresServerFqdn string = postgresModule.outputs.serverFqdn
-output databaseName string = postgresModule.outputs.databaseName
-output containerAppEnvironmentName string = containerAppsEnvironmentModule.outputs.environmentName
-output containerAppEnvironmentId string = containerAppsEnvironmentModule.outputs.environmentId
-output applicationInsightsName string = applicationInsightsModule.outputs.applicationInsightsName
-output applicationInsightsConnectionString string = applicationInsightsModule.outputs.connectionString
-output logAnalyticsWorkspaceName string = logAnalyticsModule.outputs.workspaceName
+// Container App with MI + Key Vault reference placeholder for DefaultConnection
+module containerApp 'modules/containerapp.bicep' = {
+  name: 'containerApp'
+  params: {
+    location: location
+    name: appName
+    environmentId: acaEnv.outputs.environmentId
+    containerImage: '${acr.outputs.loginServer}/${imageName}:${imageTag}'
+    targetPort: 8080
+    cpu: appCpu
+    memory: appMemory
+    registryServer: acr.outputs.loginServer
+    // Note: username/password not needed if using managed identity and ACR RBAC pull
+    keyVaultId: keyvault.outputs.vaultId
+  }
+}
+
+// Existing resource handles for scoped role assignments
+resource acrRes 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: acrName
+}
+
+resource kvRes 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
+  name: kvName
+}
+
+// Role assignment: allow Container App system-assigned identity to pull from ACR
+resource acrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, resourceGroup().id, 'AcrPull', acrName, appName)
+  scope: acrRes
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
+    principalId: containerApp.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Role assignment: allow Container App system-assigned identity to read secrets from Key Vault
+resource kvSecretsUserAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, resourceGroup().id, 'KVSecretsUser', kvName, appName)
+  scope: kvRes
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+    principalId: containerApp.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Outputs for CI usage
+output acrLoginServer string = acr.outputs.loginServer
+output acrName string = acrName
+output containerAppName string = appName
+output containerAppFqdn string = containerApp.outputs.fqdn
+output keyVaultName string = kvName
+output keyVaultId string = keyvault.outputs.vaultId
+output postgresFqdn string = postgres.outputs.fqdn
