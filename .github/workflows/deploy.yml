@@ -48,17 +48,38 @@ jobs:
 
       - name: Deploy Infra (Bicep)
         id: deploy
+        env:
+          PG_ADMIN_USER: ${{ secrets.PG_ADMIN_USER }}
+          PG_ADMIN_PASSWORD: ${{ secrets.PG_ADMIN_PASSWORD }}
         run: |
+          set -euo pipefail
           RG="${{ github.event.inputs.resourceGroup || 'todolist-dev-rg' }}"
           ENVNAME="${{ github.event.inputs.environment || 'dev' }}"
           IMAGE_TAG="${{ github.sha }}"
+
+          # Prefer provided secrets; if missing, generate strong credentials
+          PG_ADMIN_USER="${PG_ADMIN_USER:-}"
+          PG_ADMIN_PASSWORD="${PG_ADMIN_PASSWORD:-}"
+          if [ -z "${PG_ADMIN_USER}" ]; then
+            PG_ADMIN_USER="pgadmin$(openssl rand -hex 3)"
+          fi
+          if [ -z "${PG_ADMIN_PASSWORD}" ]; then
+            # 24-char mixed charset with at least one of each common class
+            PG_ADMIN_PASSWORD="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9@#%&+=' | head -c 28)1!Aa"
+          fi
+
+          # Deploy infra and capture full result, then extract outputs to avoid CLI response-read issues
           az deployment group create \
             -g "$RG" \
             -f infra/main.bicep \
             -p namePrefix=todolist environment="$ENVNAME" imageTag="$IMAGE_TAG" \
-               pgAdminUser="${{ secrets.PG_ADMIN_USER }}" pgAdminPassword="${{ secrets.PG_ADMIN_PASSWORD }}" \
-            --query "properties.outputs" --output json > deploy-outputs.json
-          cat deploy-outputs.json
+               pgAdminUser="$PG_ADMIN_USER" pgAdminPassword="$PG_ADMIN_PASSWORD" \
+            -o json > deploy-full.json
+          jq '.properties.outputs' deploy-full.json | tee deploy-outputs.json
+
+          # Expose generated credentials as step outputs for later steps
+          echo "pgAdminUser=$PG_ADMIN_USER" >> "$GITHUB_OUTPUT"
+          echo "pgAdminPassword=$PG_ADMIN_PASSWORD" >> "$GITHUB_OUTPUT"
 
       - name: Set outputs
         id: setouts
@@ -72,15 +93,40 @@ jobs:
           echo "pg=$(jq -r .postgresFqdn.value deploy-outputs.json)" >> $GITHUB_OUTPUT
 
       - name: Compose Postgres Connection String and upsert KV secret
+        env:
+          KV: ${{ steps.setouts.outputs.kv }}
+          KV_ID: ${{ steps.setouts.outputs.kvId }}
+          PGHOST: ${{ steps.setouts.outputs.pg }}
+          PGUSER: ${{ steps.deploy.outputs.pgAdminUser }}
+          PGPASS: ${{ steps.deploy.outputs.pgAdminPassword }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
-          RG="${{ github.event.inputs.resourceGroup || 'todolist-dev-rg' }}"
-          KV="${{ steps.setouts.outputs.kv }}"
-          PGHOST="${{ steps.setouts.outputs.pg }}"
-          PGUSER="${{ secrets.PG_ADMIN_USER }}"
-          PGPASS="${{ secrets.PG_ADMIN_PASSWORD }}"
+          set -euo pipefail
+          # Ensure current SP has KV data-plane rights
+          SP_OBJECT_ID=""
+          if SP_OBJECT_ID=$(az ad sp show --id "${AZURE_CLIENT_ID}" --query id -o tsv 2>/dev/null); then
+            az role assignment create \
+              --assignee-object-id "$SP_OBJECT_ID" \
+              --assignee-principal-type ServicePrincipal \
+              --role "Key Vault Secrets Officer" \
+              --scope "${KV_ID}" || true
+          else
+            echo "Warning: could not resolve SP object id; skipping KV RBAC assignment"
+          fi
+
+          # Compose connection string
           DBNAME="todolistdb"
-          CONNSTR="Host=$PGHOST;Database=$DBNAME;Username=$PGUSER;Password=$PGPASS;Include Error Detail=true"
-          az keyvault secret set --vault-name "$KV" --name "DefaultConnection" --value "$CONNSTR"
+          CONNSTR="Host=${PGHOST};Database=${DBNAME};Username=${PGUSER};Password=${PGPASS};Include Error Detail=true"
+
+          # Retry writing the secret to account for RBAC propagation
+          for i in {1..6}; do
+            if az keyvault secret set --vault-name "${KV}" --name "DefaultConnection" --value "${CONNSTR}" >/dev/null 2>&1; then
+              echo "Secret upserted"
+              break
+            fi
+            echo "KV RBAC not ready yet, retry $i/6..."
+            sleep 10
+          done
 
       - name: Output infra values
         run: |
