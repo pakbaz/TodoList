@@ -56,6 +56,8 @@ jobs:
           RG="${{ github.event.inputs.resourceGroup || 'todolist-dev-rg' }}"
           ENVNAME="${{ github.event.inputs.environment || 'dev' }}"
           IMAGE_TAG="${{ github.sha }}"
+          export AZURE_CORE_ONLY_SHOW_ERRORS=True
+          DEPLOYMENT_NAME="aca-iac-${{ github.run_id }}-${{ github.run_attempt }}"
 
           # Prefer provided secrets; if missing, generate strong credentials
           PG_ADMIN_USER="${PG_ADMIN_USER:-}"
@@ -68,14 +70,35 @@ jobs:
             PG_ADMIN_PASSWORD="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9@#%&+=' | head -c 28)1!Aa"
           fi
 
-          # Deploy infra and capture full result, then extract outputs to avoid CLI response-read issues
+          # Deploy infra with a stable name; avoid streaming JSON to stdout to bypass CLI response-read bug
+          set +e
           az deployment group create \
             -g "$RG" \
+            -n "$DEPLOYMENT_NAME" \
             -f infra/main.bicep \
             -p namePrefix=todolist environment="$ENVNAME" imageTag="$IMAGE_TAG" \
                pgAdminUser="$PG_ADMIN_USER" pgAdminPassword="$PG_ADMIN_PASSWORD" \
-            -o json > deploy-full.json
-          jq '.properties.outputs' deploy-full.json | tee deploy-outputs.json
+            -o none
+          CREATE_EXIT=$?
+          set -e
+
+          # Poll the deployment until it reaches a terminal state, then fetch outputs
+          for i in {1..30}; do
+            STATE=$(az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" --query properties.provisioningState -o tsv || true)
+            echo "Deployment state: ${STATE:-unknown} (attempt $i)"
+            if [ "$STATE" = "Succeeded" ] || [ "$STATE" = "Failed" ] || [ "$STATE" = "Canceled" ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          if [ "$STATE" != "Succeeded" ]; then
+            echo "Deployment did not succeed. Final state: $STATE" >&2
+            az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" -o jsonc || true
+            exit 1
+          fi
+
+          az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" --query properties.outputs -o json | tee deploy-outputs.json
 
           # Expose generated credentials as step outputs for later steps
           echo "pgAdminUser=$PG_ADMIN_USER" >> "$GITHUB_OUTPUT"
