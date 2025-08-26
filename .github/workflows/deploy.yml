@@ -70,12 +70,15 @@ jobs:
             PG_ADMIN_PASSWORD="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9@#%&+=' | head -c 28)1!Aa"
           fi
 
+          # Compile Bicep to ARM JSON to avoid CLI streaming bugs
+          az bicep build -f infra/main.bicep -o infra/main.compiled.json
+
           # Deploy infra with a stable name; avoid streaming JSON to stdout to bypass CLI response-read bug
           set +e
           az deployment group create \
             -g "$RG" \
             -n "$DEPLOYMENT_NAME" \
-            -f infra/main.bicep \
+            -f infra/main.compiled.json \
             -p namePrefix=todolist environment="$ENVNAME" imageTag="$IMAGE_TAG" \
                pgAdminUser="$PG_ADMIN_USER" pgAdminPassword="$PG_ADMIN_PASSWORD" \
             -o none
