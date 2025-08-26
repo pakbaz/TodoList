@@ -28,10 +28,11 @@ param appCpu int = 1
 param appMemory string = '1Gi'
 
 var acrName = '${namePrefix}${uniqueString(resourceGroup().id)}acr'
-var kvName = '${namePrefix}-${environment}-kv'
-var pgName = '${namePrefix}-${environment}-pg'
-var logName = '${namePrefix}-${environment}-log'
-var appInsightsName = '${namePrefix}-${environment}-ai'
+var nameSalt = uniqueString(resourceGroup().id, environment)
+var kvName = '${namePrefix}${nameSalt}kv'
+var pgName = '${namePrefix}${nameSalt}pg'
+var logName = '${namePrefix}${nameSalt}log'
+var appInsightsName = '${namePrefix}${nameSalt}ai'
 var caEnvName = '${namePrefix}-${environment}-cae'
 var appName = '${namePrefix}-${environment}-app'
 var imageName = 'todolist'
@@ -109,8 +110,8 @@ module containerApp 'modules/containerapp.bicep' = {
     cpu: appCpu
     memory: appMemory
     registryServer: acr.outputs.loginServer
-    // Note: username/password not needed if using managed identity and ACR RBAC pull
-    keyVaultId: keyvault.outputs.vaultId
+  // Note: username/password not needed if using managed identity and ACR RBAC pull
+  keyVaultUri: kvRes.properties.vaultUri
   appInsightsConnectionString: appInsights.outputs.connectionString
   }
 }
@@ -153,4 +154,5 @@ output containerAppName string = appName
 output containerAppFqdn string = containerApp.outputs.fqdn
 output keyVaultName string = kvName
 output keyVaultId string = keyvault.outputs.vaultId
+output keyVaultUri string = kvRes.properties.vaultUri
 output postgresFqdn string = postgres.outputs.fqdn

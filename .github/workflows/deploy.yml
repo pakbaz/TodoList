@@ -73,20 +73,77 @@ jobs:
           # Compile Bicep to ARM JSON to avoid CLI streaming bugs
           az bicep build -f infra/main.bicep --stdout > infra/main.compiled.json
 
+          # Validate template & parameters early to surface real errors
+          set +e
+          VALIDATE_OUT=$(az deployment group validate \
+            -g "$RG" \
+            -f infra/main.compiled.json \
+            -p namePrefix=todolist environment="$ENVNAME" imageTag="$IMAGE_TAG" \
+               pgAdminUser="$PG_ADMIN_USER" pgAdminPassword="$PG_ADMIN_PASSWORD" \
+            -o json 2>&1)
+          VALIDATE_EXIT=$?
+          set -e
+          if [ $VALIDATE_EXIT -ne 0 ]; then
+            echo "Validation failed:" >&2
+            echo "$VALIDATE_OUT" >&2
+            exit $VALIDATE_EXIT
+          fi
+
           # Deploy infra with a stable name; avoid streaming JSON to stdout to bypass CLI response-read bug
           set +e
-          az deployment group create \
+          CREATE_OUT=$(az deployment group create \
             -g "$RG" \
             -n "$DEPLOYMENT_NAME" \
             -f infra/main.compiled.json \
             -p namePrefix=todolist environment="$ENVNAME" imageTag="$IMAGE_TAG" \
                pgAdminUser="$PG_ADMIN_USER" pgAdminPassword="$PG_ADMIN_PASSWORD" \
-            -o none
+            -o json 2>&1)
           CREATE_EXIT=$?
           set -e
           if [ $CREATE_EXIT -ne 0 ]; then
-            echo "Initial deployment create command failed with exit code $CREATE_EXIT" >&2
-            exit $CREATE_EXIT
+            echo "$CREATE_OUT" >&2 || true
+            if echo "$CREATE_OUT" | grep -qi "The content for this response was already consumed"; then
+              echo "Encountered Azure CLI response stream bug. Falling back to ARM REST API..." >&2
+              SUB_ID=$(az account show --query id -o tsv)
+              # Build ARM deployment body
+              jq -n \
+                --arg namePrefix "todolist" \
+                --arg environment "$ENVNAME" \
+                --arg imageTag "$IMAGE_TAG" \
+                --arg pgAdminUser "$PG_ADMIN_USER" \
+                --arg pgAdminPassword "$PG_ADMIN_PASSWORD" \
+                --slurpfile tmpl infra/main.compiled.json \
+                '{
+                  properties: {
+                    mode: "Incremental",
+                    template: $tmpl[0],
+                    parameters: {
+                      namePrefix: { value: $namePrefix },
+                      environment: { value: $environment },
+                      imageTag: { value: $imageTag },
+                      pgAdminUser: { value: $pgAdminUser },
+                      pgAdminPassword: { value: $pgAdminPassword }
+                    }
+                  }
+                }' > arm-deployment-body.json
+
+              set +e
+              REST_OUT=$(az rest \
+                --method put \
+                --uri "https://management.azure.com/subscriptions/${SUB_ID}/resourcegroups/${RG}/providers/Microsoft.Resources/deployments/${DEPLOYMENT_NAME}?api-version=2021-04-01" \
+                --headers Content-Type=application/json \
+                --body @arm-deployment-body.json 2>&1)
+              REST_EXIT=$?
+              set -e
+              if [ $REST_EXIT -ne 0 ]; then
+                echo "ARM REST deployment failed:" >&2
+                echo "$REST_OUT" >&2
+                exit $REST_EXIT
+              fi
+            else
+              echo "Initial deployment create command failed with exit code $CREATE_EXIT" >&2
+              exit $CREATE_EXIT
+            fi
           fi
 
           # Poll the deployment until it reaches a terminal state, then fetch outputs
@@ -120,12 +177,14 @@ jobs:
           echo "fqdn=$(jq -r .containerAppFqdn.value deploy-outputs.json)" >> $GITHUB_OUTPUT
           echo "kv=$(jq -r .keyVaultName.value deploy-outputs.json)" >> $GITHUB_OUTPUT
           echo "kvId=$(jq -r .keyVaultId.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+          echo "kvUri=$(jq -r .keyVaultUri.value deploy-outputs.json)" >> $GITHUB_OUTPUT
           echo "pg=$(jq -r .postgresFqdn.value deploy-outputs.json)" >> $GITHUB_OUTPUT
 
       - name: Compose Postgres Connection String and upsert KV secret
         env:
           KV: ${{ steps.setouts.outputs.kv }}
           KV_ID: ${{ steps.setouts.outputs.kvId }}
+          KV_URI: ${{ steps.setouts.outputs.kvUri }}
           PGHOST: ${{ steps.setouts.outputs.pg }}
           PGUSER: ${{ steps.deploy.outputs.pgAdminUser }}
           PGPASS: ${{ steps.deploy.outputs.pgAdminPassword }}

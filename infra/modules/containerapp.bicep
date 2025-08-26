@@ -22,8 +22,8 @@ param memory string = '1Gi'
 @description('ACR login server (for image)')
 param registryServer string
 
-@description('Key Vault resource id for secret references')
-param keyVaultId string
+@description('Key Vault DNS base URI for the vault (ending with a trailing slash)')
+param keyVaultUri string
 
 @description('Optional Application Insights connection string for SDK autocollection')
 param appInsightsConnectionString string = ''
@@ -56,7 +56,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       secrets: [
         {
           name: 'default-connection'
-          keyVaultUrl: '${reference(keyVaultId, '2023-07-01').properties.vaultUri}secrets/DefaultConnection'
+          keyVaultUrl: '${keyVaultUri}secrets/DefaultConnection'
           identity: 'system'
         }
       ]
