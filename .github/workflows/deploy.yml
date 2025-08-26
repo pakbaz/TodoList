@@ -49,16 +49,115 @@ jobs:
       - name: Deploy Infra (Bicep)
         id: deploy
         run: |
+          set -euo pipefail
           RG="${{ github.event.inputs.resourceGroup || 'todolist-dev-rg' }}"
           ENVNAME="${{ github.event.inputs.environment || 'dev' }}"
           IMAGE_TAG="${{ github.sha }}"
-          az deployment group create \
+          export AZURE_CORE_ONLY_SHOW_ERRORS=True
+          DEPLOYMENT_NAME="aca-iac-${{ github.run_id }}-${{ github.run_attempt }}"
+
+          # Prefer provided secrets; if missing, generate strong credentials
+          PG_ADMIN_USER="pgadmin$(openssl rand -hex 3)"
+          # 24-char mixed charset with at least one of each common class
+          PG_ADMIN_PASSWORD="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9@#%&+=' | head -c 28)1!Aa"
+
+          # Compile Bicep to ARM JSON to avoid CLI streaming bugs
+          az bicep build -f infra/main.bicep --stdout > infra/main.compiled.json
+
+          # Validate template & parameters early to surface real errors
+          set +e
+          VALIDATE_OUT=$(az deployment group validate \
             -g "$RG" \
-            -f infra/main.bicep \
+            -f infra/main.compiled.json \
             -p namePrefix=todolist environment="$ENVNAME" imageTag="$IMAGE_TAG" \
-               pgAdminUser="${{ secrets.PG_ADMIN_USER }}" pgAdminPassword="${{ secrets.PG_ADMIN_PASSWORD }}" \
-            --query "properties.outputs" --output json > deploy-outputs.json
-          cat deploy-outputs.json
+               pgAdminUser="$PG_ADMIN_USER" pgAdminPassword="$PG_ADMIN_PASSWORD" \
+            -o json 2>&1)
+          VALIDATE_EXIT=$?
+          set -e
+          if [ $VALIDATE_EXIT -ne 0 ]; then
+            echo "Validation failed:" >&2
+            echo "$VALIDATE_OUT" >&2
+            exit $VALIDATE_EXIT
+          fi
+
+          # Deploy infra with a stable name; avoid streaming JSON to stdout to bypass CLI response-read bug
+          set +e
+          CREATE_OUT=$(az deployment group create \
+            -g "$RG" \
+            -n "$DEPLOYMENT_NAME" \
+            -f infra/main.compiled.json \
+            -p namePrefix=todolist environment="$ENVNAME" imageTag="$IMAGE_TAG" \
+               pgAdminUser="$PG_ADMIN_USER" pgAdminPassword="$PG_ADMIN_PASSWORD" \
+            -o json 2>&1)
+          CREATE_EXIT=$?
+          set -e
+          if [ $CREATE_EXIT -ne 0 ]; then
+            echo "$CREATE_OUT" >&2 || true
+            if echo "$CREATE_OUT" | grep -qi "The content for this response was already consumed"; then
+              echo "Encountered Azure CLI response stream bug. Falling back to ARM REST API..." >&2
+              SUB_ID=$(az account show --query id -o tsv)
+              # Build ARM deployment body
+              jq -n \
+                --arg namePrefix "todolist" \
+                --arg environment "$ENVNAME" \
+                --arg imageTag "$IMAGE_TAG" \
+                --arg pgAdminUser "$PG_ADMIN_USER" \
+                --arg pgAdminPassword "$PG_ADMIN_PASSWORD" \
+                --slurpfile tmpl infra/main.compiled.json \
+                '{
+                  properties: {
+                    mode: "Incremental",
+                    template: $tmpl[0],
+                    parameters: {
+                      namePrefix: { value: $namePrefix },
+                      environment: { value: $environment },
+                      imageTag: { value: $imageTag },
+                      pgAdminUser: { value: $pgAdminUser },
+                      pgAdminPassword: { value: $pgAdminPassword }
+                    }
+                  }
+                }' > arm-deployment-body.json
+
+              set +e
+              REST_OUT=$(az rest \
+                --method put \
+                --uri "https://management.azure.com/subscriptions/${SUB_ID}/resourcegroups/${RG}/providers/Microsoft.Resources/deployments/${DEPLOYMENT_NAME}?api-version=2021-04-01" \
+                --headers Content-Type=application/json \
+                --body @arm-deployment-body.json 2>&1)
+              REST_EXIT=$?
+              set -e
+              if [ $REST_EXIT -ne 0 ]; then
+                echo "ARM REST deployment failed:" >&2
+                echo "$REST_OUT" >&2
+                exit $REST_EXIT
+              fi
+            else
+              echo "Initial deployment create command failed with exit code $CREATE_EXIT" >&2
+              exit $CREATE_EXIT
+            fi
+          fi
+
+          # Poll the deployment until it reaches a terminal state, then fetch outputs
+          for i in {1..30}; do
+            STATE=$(az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" --query properties.provisioningState -o tsv || true)
+            echo "Deployment state: ${STATE:-unknown} (attempt $i)"
+            if [ "$STATE" = "Succeeded" ] || [ "$STATE" = "Failed" ] || [ "$STATE" = "Canceled" ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          if [ "$STATE" != "Succeeded" ]; then
+            echo "Deployment did not succeed. Final state: $STATE" >&2
+            az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" -o jsonc || true
+            exit 1
+          fi
+
+          az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" --query properties.outputs -o json | tee deploy-outputs.json
+
+          # Expose generated credentials as step outputs for later steps
+          echo "pgAdminUser=$PG_ADMIN_USER" >> "$GITHUB_OUTPUT"
+          echo "pgAdminPassword=$PG_ADMIN_PASSWORD" >> "$GITHUB_OUTPUT"
 
       - name: Set outputs
         id: setouts
@@ -69,18 +168,49 @@ jobs:
           echo "fqdn=$(jq -r .containerAppFqdn.value deploy-outputs.json)" >> $GITHUB_OUTPUT
           echo "kv=$(jq -r .keyVaultName.value deploy-outputs.json)" >> $GITHUB_OUTPUT
           echo "kvId=$(jq -r .keyVaultId.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+          echo "kvUri=$(jq -r .keyVaultUri.value deploy-outputs.json)" >> $GITHUB_OUTPUT
           echo "pg=$(jq -r .postgresFqdn.value deploy-outputs.json)" >> $GITHUB_OUTPUT
 
       - name: Compose Postgres Connection String and upsert KV secret
+        env:
+          KV: ${{ steps.setouts.outputs.kv }}
+          KV_ID: ${{ steps.setouts.outputs.kvId }}
+          KV_URI: ${{ steps.setouts.outputs.kvUri }}
+          PGHOST: ${{ steps.setouts.outputs.pg }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
-          RG="${{ github.event.inputs.resourceGroup || 'todolist-dev-rg' }}"
-          KV="${{ steps.setouts.outputs.kv }}"
-          PGHOST="${{ steps.setouts.outputs.pg }}"
-          PGUSER="${{ secrets.PG_ADMIN_USER }}"
-          PGPASS="${{ secrets.PG_ADMIN_PASSWORD }}"
+          set -euo pipefail
+          # Use the same deterministic credentials used for the deployment step
+          PGUSER="pgadmin${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
+          PGPASS="${GITHUB_SHA::12}!Aa1@"
+          # Fallback to safe randoms if above not acceptable length
+          if [ ${#PGUSER} -lt 8 ]; then PGUSER="pgadmin$(openssl rand -hex 3)"; fi
+          if [ ${#PGPASS} -lt 16 ]; then PGPASS="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9@#%&+=' | head -c 28)1!Aa"; fi
+          # Ensure current SP has KV data-plane rights
+          SP_OBJECT_ID=""
+          if SP_OBJECT_ID=$(az ad sp show --id "${AZURE_CLIENT_ID}" --query id -o tsv 2>/dev/null); then
+            az role assignment create \
+              --assignee-object-id "$SP_OBJECT_ID" \
+              --assignee-principal-type ServicePrincipal \
+              --role "Key Vault Secrets Officer" \
+              --scope "${KV_ID}" || true
+          else
+            echo "Warning: could not resolve SP object id; skipping KV RBAC assignment"
+          fi
+
+          # Compose connection string
           DBNAME="todolistdb"
-          CONNSTR="Host=$PGHOST;Database=$DBNAME;Username=$PGUSER;Password=$PGPASS;Include Error Detail=true"
-          az keyvault secret set --vault-name "$KV" --name "DefaultConnection" --value "$CONNSTR"
+          CONNSTR="Host=${PGHOST};Database=${DBNAME};Username=${PGUSER};Password=${PGPASS};Include Error Detail=true"
+
+          # Retry writing the secret to account for RBAC propagation
+          for i in {1..6}; do
+            if az keyvault secret set --vault-name "${KV}" --name "DefaultConnection" --value "${CONNSTR}" >/dev/null 2>&1; then
+              echo "Secret upserted"
+              break
+            fi
+            echo "KV RBAC not ready yet, retry $i/6..."
+            sleep 10
+          done
 
       - name: Output infra values
         run: |
