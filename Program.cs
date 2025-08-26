@@ -402,3 +402,6 @@ async Task<object> HandleGetTodosAsync(TodoListService service)
 // Request DTOs for clean API contracts
 public record AddTodoRequest(string Title, bool IsDone = false);
 public record UpdateTodoRequest(bool IsDone);
+
+// Make Program class accessible for testing
+public partial class Program { }
