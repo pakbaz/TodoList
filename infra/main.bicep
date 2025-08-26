@@ -101,6 +101,9 @@ module acaEnv 'modules/aca-environment.bicep' = {
 // Container App with MI + Key Vault reference placeholder for DefaultConnection
 module containerApp 'modules/containerapp.bicep' = {
   name: 'containerApp'
+  dependsOn: [
+    keyvault
+  ]
   params: {
     location: location
     name: appName
