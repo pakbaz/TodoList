@@ -71,7 +71,7 @@ jobs:
           fi
 
           # Compile Bicep to ARM JSON to avoid CLI streaming bugs
-          az bicep build -f infra/main.bicep -o infra/main.compiled.json
+          az bicep build -f infra/main.bicep --stdout > infra/main.compiled.json
 
           # Deploy infra with a stable name; avoid streaming JSON to stdout to bypass CLI response-read bug
           set +e
@@ -84,6 +84,10 @@ jobs:
             -o none
           CREATE_EXIT=$?
           set -e
+          if [ $CREATE_EXIT -ne 0 ]; then
+            echo "Initial deployment create command failed with exit code $CREATE_EXIT" >&2
+            exit $CREATE_EXIT
+          fi
 
           # Poll the deployment until it reaches a terminal state, then fetch outputs
           for i in {1..30}; do
