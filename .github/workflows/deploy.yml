@@ -155,21 +155,61 @@ jobs:
 
           az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" --query properties.outputs -o json | tee deploy-outputs.json
 
+          # Validate credentials were generated during initialization
+          if [ -z "$PG_ADMIN_USER" ] || [ -z "$PG_ADMIN_PASSWORD" ]; then
+            echo "Error: PostgreSQL credentials were not generated" >&2
+            exit 1
+          fi
+
           # Expose generated credentials as step outputs for later steps
           echo "pgAdminUser=$PG_ADMIN_USER" >> "$GITHUB_OUTPUT"
           echo "pgAdminPassword=$PG_ADMIN_PASSWORD" >> "$GITHUB_OUTPUT"
+          echo "PostgreSQL credentials generated and exposed as step outputs"
 
       - name: Set outputs
         id: setouts
         run: |
-          echo "acr=$(jq -r .acrLoginServer.value deploy-outputs.json)" >> $GITHUB_OUTPUT
-          echo "acrName=$(jq -r .acrName.value deploy-outputs.json)" >> $GITHUB_OUTPUT
-          echo "app=$(jq -r .containerAppName.value deploy-outputs.json)" >> $GITHUB_OUTPUT
-          echo "fqdn=$(jq -r .containerAppFqdn.value deploy-outputs.json)" >> $GITHUB_OUTPUT
-          echo "kv=$(jq -r .keyVaultName.value deploy-outputs.json)" >> $GITHUB_OUTPUT
-          echo "kvId=$(jq -r .keyVaultId.value deploy-outputs.json)" >> $GITHUB_OUTPUT
-          echo "kvUri=$(jq -r .keyVaultUri.value deploy-outputs.json)" >> $GITHUB_OUTPUT
-          echo "pg=$(jq -r .postgresFqdn.value deploy-outputs.json)" >> $GITHUB_OUTPUT
+          # Validate deploy-outputs.json exists
+          if [ ! -f deploy-outputs.json ]; then
+            echo "Error: deploy-outputs.json not found" >&2
+            exit 1
+          fi
+          
+          # Extract outputs with validation
+          ACR=$(jq -r '.acrLoginServer.value // empty' deploy-outputs.json)
+          ACR_NAME=$(jq -r '.acrName.value // empty' deploy-outputs.json)
+          APP=$(jq -r '.containerAppName.value // empty' deploy-outputs.json)
+          FQDN=$(jq -r '.containerAppFqdn.value // empty' deploy-outputs.json)
+          KV=$(jq -r '.keyVaultName.value // empty' deploy-outputs.json)
+          KV_ID=$(jq -r '.keyVaultId.value // empty' deploy-outputs.json)
+          KV_URI=$(jq -r '.keyVaultUri.value // empty' deploy-outputs.json)
+          PG=$(jq -r '.postgresFqdn.value // empty' deploy-outputs.json)
+          
+          # Validate critical outputs are not empty
+          if [ -z "$ACR" ] || [ -z "$ACR_NAME" ] || [ -z "$APP" ] || [ -z "$FQDN" ] || [ -z "$KV" ] || [ -z "$KV_ID" ] || [ -z "$KV_URI" ] || [ -z "$PG" ]; then
+            echo "Error: One or more critical infrastructure outputs are missing:" >&2
+            echo "  ACR: ${ACR:-MISSING}" >&2
+            echo "  ACR_NAME: ${ACR_NAME:-MISSING}" >&2
+            echo "  APP: ${APP:-MISSING}" >&2
+            echo "  FQDN: ${FQDN:-MISSING}" >&2
+            echo "  KV: ${KV:-MISSING}" >&2
+            echo "  KV_ID: ${KV_ID:-MISSING}" >&2
+            echo "  KV_URI: ${KV_URI:-MISSING}" >&2
+            echo "  PG: ${PG:-MISSING}" >&2
+            exit 1
+          fi
+          
+          # Set outputs
+          echo "acr=$ACR" >> $GITHUB_OUTPUT
+          echo "acrName=$ACR_NAME" >> $GITHUB_OUTPUT
+          echo "app=$APP" >> $GITHUB_OUTPUT
+          echo "fqdn=$FQDN" >> $GITHUB_OUTPUT
+          echo "kv=$KV" >> $GITHUB_OUTPUT
+          echo "kvId=$KV_ID" >> $GITHUB_OUTPUT
+          echo "kvUri=$KV_URI" >> $GITHUB_OUTPUT
+          echo "pg=$PG" >> $GITHUB_OUTPUT
+          
+          echo "All infrastructure outputs validated and set successfully"
 
       - name: Compose Postgres Connection String and upsert KV secret
         env:
@@ -177,25 +217,37 @@ jobs:
           KV_ID: ${{ steps.setouts.outputs.kvId }}
           KV_URI: ${{ steps.setouts.outputs.kvUri }}
           PGHOST: ${{ steps.setouts.outputs.pg }}
+          PGUSER: ${{ steps.deploy.outputs.pgAdminUser }}
+          PGPASS: ${{ steps.deploy.outputs.pgAdminPassword }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
           set -euo pipefail
-          # Use the same deterministic credentials used for the deployment step
-          PGUSER="pgadmin${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
-          PGPASS="${GITHUB_SHA::12}!Aa1@"
-          # Fallback to safe randoms if above not acceptable length
-          if [ ${#PGUSER} -lt 8 ]; then PGUSER="pgadmin$(openssl rand -hex 3)"; fi
-          if [ ${#PGPASS} -lt 16 ]; then PGPASS="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9@#%&+=' | head -c 28)1!Aa"; fi
+          
+          # Validate required outputs are present
+          if [ -z "${KV:-}" ] || [ -z "${KV_ID:-}" ] || [ -z "${PGHOST:-}" ]; then
+            echo "Error: Missing required infrastructure outputs (KV, KV_ID, or PGHOST)" >&2
+            exit 1
+          fi
+          
+          # Validate PostgreSQL credentials from deploy step
+          if [ -z "${PGUSER:-}" ] || [ -z "${PGPASS:-}" ]; then
+            echo "Error: PostgreSQL credentials not found in deploy step outputs." >&2
+            echo "This indicates a critical failure in the deployment step." >&2
+            echo "Cannot proceed without valid credentials that match the deployed database." >&2
+            exit 1
+          fi
+          
           # Ensure current SP has KV data-plane rights
           SP_OBJECT_ID=""
           if SP_OBJECT_ID=$(az ad sp show --id "${AZURE_CLIENT_ID}" --query id -o tsv 2>/dev/null); then
+            echo "Assigning Key Vault Secrets Officer role to service principal..."
             az role assignment create \
               --assignee-object-id "$SP_OBJECT_ID" \
               --assignee-principal-type ServicePrincipal \
               --role "Key Vault Secrets Officer" \
               --scope "${KV_ID}" || true
           else
-            echo "Warning: could not resolve SP object id; skipping KV RBAC assignment"
+            echo "Warning: could not resolve SP object id; skipping KV RBAC assignment" >&2
           fi
 
           # Compose connection string
@@ -203,14 +255,23 @@ jobs:
           CONNSTR="Host=${PGHOST};Database=${DBNAME};Username=${PGUSER};Password=${PGPASS};Include Error Detail=true"
 
           # Retry writing the secret to account for RBAC propagation
+          SECRET_WRITTEN=false
           for i in {1..6}; do
             if az keyvault secret set --vault-name "${KV}" --name "DefaultConnection" --value "${CONNSTR}" >/dev/null 2>&1; then
-              echo "Secret upserted"
+              echo "Secret 'DefaultConnection' successfully written to Key Vault '${KV}'"
+              SECRET_WRITTEN=true
               break
             fi
             echo "KV RBAC not ready yet, retry $i/6..."
             sleep 10
           done
+          
+          # Validate secret was written
+          if [ "$SECRET_WRITTEN" != "true" ]; then
+            echo "Error: Failed to write secret to Key Vault after all retries" >&2
+            echo "This may cause the application to fail at startup" >&2
+            exit 1
+          fi
 
       - name: Output infra values
         run: |
