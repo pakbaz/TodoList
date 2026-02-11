@@ -155,7 +155,7 @@ jobs:
 
           az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" --query properties.outputs -o json | tee deploy-outputs.json
 
-          # Validate credentials were generated
+          # Validate credentials were generated (set at lines 60-62)
           if [ -z "$PG_ADMIN_USER" ] || [ -z "$PG_ADMIN_PASSWORD" ]; then
             echo "Error: PostgreSQL credentials were not generated" >&2
             exit 1
@@ -186,13 +186,15 @@ jobs:
           PG=$(jq -r '.postgresFqdn.value // empty' deploy-outputs.json)
           
           # Validate critical outputs are not empty
-          if [ -z "$ACR" ] || [ -z "$ACR_NAME" ] || [ -z "$APP" ] || [ -z "$KV" ] || [ -z "$KV_ID" ] || [ -z "$PG" ]; then
+          if [ -z "$ACR" ] || [ -z "$ACR_NAME" ] || [ -z "$APP" ] || [ -z "$FQDN" ] || [ -z "$KV" ] || [ -z "$KV_ID" ] || [ -z "$KV_URI" ] || [ -z "$PG" ]; then
             echo "Error: One or more critical infrastructure outputs are missing:" >&2
             echo "  ACR: ${ACR:-MISSING}" >&2
             echo "  ACR_NAME: ${ACR_NAME:-MISSING}" >&2
             echo "  APP: ${APP:-MISSING}" >&2
+            echo "  FQDN: ${FQDN:-MISSING}" >&2
             echo "  KV: ${KV:-MISSING}" >&2
             echo "  KV_ID: ${KV_ID:-MISSING}" >&2
+            echo "  KV_URI: ${KV_URI:-MISSING}" >&2
             echo "  PG: ${PG:-MISSING}" >&2
             exit 1
           fi
