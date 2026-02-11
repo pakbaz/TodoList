@@ -177,15 +177,11 @@ jobs:
           KV_ID: ${{ steps.setouts.outputs.kvId }}
           KV_URI: ${{ steps.setouts.outputs.kvUri }}
           PGHOST: ${{ steps.setouts.outputs.pg }}
+          PGUSER: ${{ steps.deploy.outputs.pgAdminUser }}
+          PGPASS: ${{ steps.deploy.outputs.pgAdminPassword }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
           set -euo pipefail
-          # Use the same deterministic credentials used for the deployment step
-          PGUSER="pgadmin${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
-          PGPASS="${GITHUB_SHA::12}!Aa1@"
-          # Fallback to safe randoms if above not acceptable length
-          if [ ${#PGUSER} -lt 8 ]; then PGUSER="pgadmin$(openssl rand -hex 3)"; fi
-          if [ ${#PGPASS} -lt 16 ]; then PGPASS="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9@#%&+=' | head -c 28)1!Aa"; fi
           # Ensure current SP has KV data-plane rights
           SP_OBJECT_ID=""
           if SP_OBJECT_ID=$(az ad sp show --id "${AZURE_CLIENT_ID}" --query id -o tsv 2>/dev/null); then
