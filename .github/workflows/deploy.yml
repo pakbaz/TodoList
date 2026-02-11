@@ -227,13 +227,12 @@ jobs:
             exit 1
           fi
           
-          # Validate and fallback for PostgreSQL credentials
+          # Validate PostgreSQL credentials from deploy step
           if [ -z "${PGUSER:-}" ] || [ -z "${PGPASS:-}" ]; then
-            echo "Warning: PostgreSQL credentials not found in deploy step outputs" >&2
-            echo "Generating fallback credentials..." >&2
-            PGUSER="${PGUSER:-pgadmin$(openssl rand -hex 3)}"
-            PGPASS="${PGPASS:-$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9@#%&+=' | head -c 28)1!Aa}"
-            echo "Note: Fallback credentials may not match database if deployment used different values" >&2
+            echo "Error: PostgreSQL credentials not found in deploy step outputs" >&2
+            echo "This indicates a critical failure in the deployment step" >&2
+            echo "Cannot proceed without valid credentials that match the deployed database" >&2
+            exit 1
           fi
           
           # Ensure current SP has KV data-plane rights
