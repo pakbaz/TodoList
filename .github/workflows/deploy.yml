@@ -155,7 +155,7 @@ jobs:
 
           az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" --query properties.outputs -o json | tee deploy-outputs.json
 
-          # Validate credentials were generated (set at lines 60-62)
+          # Validate credentials were generated during initialization
           if [ -z "$PG_ADMIN_USER" ] || [ -z "$PG_ADMIN_PASSWORD" ]; then
             echo "Error: PostgreSQL credentials were not generated" >&2
             exit 1
@@ -231,9 +231,9 @@ jobs:
           
           # Validate PostgreSQL credentials from deploy step
           if [ -z "${PGUSER:-}" ] || [ -z "${PGPASS:-}" ]; then
-            echo "Error: PostgreSQL credentials not found in deploy step outputs" >&2
-            echo "This indicates a critical failure in the deployment step" >&2
-            echo "Cannot proceed without valid credentials that match the deployed database" >&2
+            echo "Error: PostgreSQL credentials not found in deploy step outputs." >&2
+            echo "This indicates a critical failure in the deployment step." >&2
+            echo "Cannot proceed without valid credentials that match the deployed database." >&2
             exit 1
           fi
           
